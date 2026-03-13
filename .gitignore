@@ -9,7 +9,7 @@ __pycache__/
 *.bag
 *.db3
 bags/
-maps/
+#maps/
 
 .vscode/
 .idea/
