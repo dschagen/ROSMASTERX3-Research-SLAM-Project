@@ -2,20 +2,29 @@ ROSMASTER X3 Research SLAM Project
 
 This repository contains a full robotics pipeline for the Yahboom ROSMASTER X3 platform using ROS 2 Foxy. The system performs indoor mapping and autonomous navigation using LiDAR-based SLAM and camera-based hallway following.
 
-Project Overview
-This project builds a modular autonomy stack consisting of:
+Project Overview:
+## 📊 Current Status
 
-LiDAR-based SLAM mapping
-Camera-based perception using OpenCV
-Reactive hallway navigation
-ROS2 modular node architecture
+✔ SLAM mapping operational  
+✔ Camera perception working (~26 Hz)  
+✔ Hallway detection stable  
+✔ Autonomous hallway following functional  
+⚠ Motion tuning in progress  
 
 The system runs on a Jetson platform inside Docker using ROS 2 Foxy.
 
 System Architecture
-LiDAR → SLAM Toolbox → /map
-Camera → Hallway Detector → /hallway_direction
-Hallway Follower → /cmd_vel_safe → Driver Node → Robot Motors
+[ LiDAR ] --------> [ SLAM Toolbox ] --------> /map
+
+[ Camera ] -------> [ Hallway Detector ] ----> /hallway_direction
+                                           ↓
+                                   [ Hallway Follower ]
+                                           ↓
+                                      /cmd_vel_safe
+                                           ↓
+                                      [ Driver Node ]
+                                           ↓
+                                      Robot Motors
 
 Current Features
 SLAM Mapping
@@ -40,10 +49,10 @@ Publishes /cmd_vel_safe
 
 Behavior:
 
-CENTER → Move forward
-LEFT → Steer left
-RIGHT → Steer right
-NONE → Stop
+CENTER  → Move forward  
+LEFT    → Steer left  
+RIGHT   → Steer right  
+NONE    → Stop  
 
 Modular ROS2 Design
 Separation of:
@@ -129,6 +138,16 @@ SLAM
 Computer Vision (OpenCV)
 Reactive Control
 ROS2 Architecture
+
+## 🧩 Future System Vision
+
+This project will evolve into a full autonomous navigation system combining:
+
+- Visual perception (camera)
+- LiDAR-based mapping
+- Localization and path planning (Nav2)
+
+Goal: robust indoor navigation in unknown environments.
 
 Authors:
 Daniel Schagen
