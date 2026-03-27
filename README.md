@@ -4,7 +4,7 @@ This repository contains a full robotics pipeline for the Yahboom ROSMASTER X3 p
 
 ---
 
-## 🚀 Project Overview
+## Project Overview
 
 This project builds a modular autonomy stack consisting of:
 
@@ -17,16 +17,16 @@ The system runs on a Jetson platform inside Docker using ROS 2 Foxy.
 
 ---
 
-## 🧠 System Architecture
+## System Architecture
 LiDAR → SLAM Toolbox → /map
 Camera → Hallway Detector → /hallway_direction
 Hallway Follower → /cmd_vel_safe → Driver Node → Robot Motors
 
 ---
 
-## 📦 Current Features
+## Current Features
 
-### ✅ SLAM Mapping
+### SLAM Mapping
 - Uses `slam_toolbox`
 - Publishes:
   - `/map`
@@ -35,7 +35,7 @@ Hallway Follower → /cmd_vel_safe → Driver Node → Robot Motors
 
 ---
 
-### ✅ Camera-Based Hallway Detection
+### Camera-Based Hallway Detection
 - Input: `/camera/color/image_raw`
 - Processing:
   - Canny edge detection  
@@ -46,7 +46,7 @@ Hallway Follower → /cmd_vel_safe → Driver Node → Robot Motors
 
 ---
 
-### ✅ Autonomous Hallway Following
+### Autonomous Hallway Following
 - Node: `hallway_follower`
 - Subscribes to `/hallway_direction`
 - Publishes `/cmd_vel_safe`
@@ -62,7 +62,7 @@ Behavior:
 
 ---
 
-### ✅ Modular ROS2 Design
+### Modular ROS2 Design
 - Separation of:
   - Perception (`hallway_detector`)
   - Control (`hallway_follower`)
@@ -71,7 +71,7 @@ Behavior:
 
 ---
 
-## 🛠️ Setup
+## Setup
 
 ### Requirements
 - ROS 2 Foxy  
@@ -82,7 +82,7 @@ Behavior:
 
 ---
 
-## ▶️ How to Run
+## How to Run
 
 ### 1. Start Robot Bringup + SLAM
 `ros2 launch rosmasterx3_slam mapping_bringup.launch.py`
@@ -108,7 +108,7 @@ Behavior:
 ### Check velocity:
 `ros2 topic echo /cmd_vel_safe
 
-## ⚙️ Tuning
+## Tuning
 
 ### Inside hallway_follower.py:
 `linear.x = 0.02`
@@ -118,13 +118,13 @@ Behavior:
 `- Higher angular.z → faster correction`
 `- Increase smoothing window → less jitter`
 
-## 🧪 Current Limitations
+## Current Limitations
 `- No obstacle avoidance`
 `- No global path planning`
 `- Lighting sensitivity`
 `- No dead-end detection`
 
-## 📁 Repository Structure
+## Repository Structure
 
 ros2_ws/src/rosmasterx3_slam/
 ├── config/
@@ -137,7 +137,7 @@ ros2_ws/src/rosmasterx3_slam/
 ├── package.xml
 ├── setup.py
 
-## 👨‍💻 Authors
+## Authors
 Daniel Schagen
 Mark Halim
 University of South Florida
