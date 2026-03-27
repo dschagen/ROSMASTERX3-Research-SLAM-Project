@@ -97,7 +97,7 @@ Behavior:
 ### 5. Emergencey Stop
 `ros2 topic pub -r 50 /cmd_vel_safe geometry_msgs/msg/Twist "{linear: {x: 0.0, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.0}}"`
 
-## 🔍 Debugging
+## Debugging
 
 ### Check topics:
 `ros2 topic list`
