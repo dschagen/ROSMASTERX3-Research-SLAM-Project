@@ -5,7 +5,7 @@ from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 
 from sensor_msgs.msg import Image
-from std_msgs.msg import String
+from std_msgs.msg import String, Float32
 from cv_bridge import CvBridge
 
 import cv2
@@ -29,6 +29,7 @@ class HallwayDetector(Node):
 
         # Publish hallway bias for follower node
         self.direction_pub = self.create_publisher(String, '/hallway_direction', 10)
+        self.steering_pub = self.create_publisher(Float32, '/hallway_steering_bias', 10)
 
         # Debug / state
         self.received_first_frame = False
@@ -41,6 +42,9 @@ class HallwayDetector(Node):
         self.center_bias = 0.90
         self.diff_threshold = 150
         self.show_debug = True
+        # Continuous steering: [-1, 1], positive = steer left (matches follower angular.z sign)
+        self.bias_ema_alpha = 0.35
+        self.steering_bias_ema = 0.0
 
         self.get_logger().info(
             'Hallway detector v5 started. Using full image from /camera/color/image_raw'
@@ -123,10 +127,27 @@ class HallwayDetector(Node):
         self.direction_history.append(direction)
         stable_direction = self.majority_vote(self.direction_history)
 
+        # Continuous steering bias (camera frame): positive when left side is more open
+        # than right (same sign convention as discrete LEFT = positive angular.z).
+        total = float(left_score + center_score + right_score) + 1e-6
+        if lr_diff < self.diff_threshold:
+            bias_raw = 0.0
+        else:
+            bias_raw = float(np.clip((left_score - right_score) / total, -1.0, 1.0))
+
+        self.steering_bias_ema = (
+            self.bias_ema_alpha * bias_raw
+            + (1.0 - self.bias_ema_alpha) * self.steering_bias_ema
+        )
+
         # Publish direction every callback
         msg_out = String()
         msg_out.data = stable_direction
         self.direction_pub.publish(msg_out)
+
+        bias_msg = Float32()
+        bias_msg.data = float(self.steering_bias_ema)
+        self.steering_pub.publish(bias_msg)
 
         if stable_direction != self.last_reported_direction:
             self.get_logger().info(
@@ -150,7 +171,7 @@ class HallwayDetector(Node):
             # Labels
             cv2.putText(
                 debug,
-                f'Stable: {stable_direction}',
+                f'Stable: {stable_direction} bias={self.steering_bias_ema:.2f}',
                 (20, 35),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 1.0,
