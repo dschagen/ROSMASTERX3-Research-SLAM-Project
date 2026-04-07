@@ -30,7 +30,7 @@ class HallwayFollower(Node):
         self.declare_parameter('slow_distance_m', 0.55)
         self.declare_parameter('lidar_timeout_sec', 0.5)
         self.declare_parameter('camera_timeout_sec', 0.45)
-        self.declare_parameter('require_lidar_before_move', True)
+        self.declare_parameter('require_lidar_before_move', False)
         self.declare_parameter('control_period_sec', 0.05)
         self.declare_parameter('discrete_fallback_threshold', 0.06)
 
@@ -151,24 +151,8 @@ class HallwayFollower(Node):
         now = time.monotonic()
         cmd = Twist()
 
+        # Minimal gating: only require first camera frame
         if self._last_camera_time is None:
-            self._reset_pid()
-            self.cmd_pub.publish(cmd)
-            return
-
-        if (now - self._last_camera_time) > self._camera_timeout:
-            self._reset_pid()
-            self.cmd_pub.publish(cmd)
-            return
-
-        if self._require_lidar and not self._scan_received:
-            self._reset_pid()
-            self.cmd_pub.publish(cmd)
-            return
-
-        if self._last_scan_time is not None and (now - self._last_scan_time) > self._lidar_timeout:
-            self._reset_pid()
-            self.cmd_pub.publish(cmd)
             return
 
         bias = self.steering_bias
