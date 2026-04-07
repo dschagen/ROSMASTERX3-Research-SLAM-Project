@@ -220,8 +220,9 @@ class HallwayDetector(Node):
             )
 
             try:
-                cv2.imshow('Hallway Detector Debug', debug)
-                cv2.waitKey(1)
+                #cv2.imshow('Hallway Detector Debug', debug)
+                #cv2.waitKey(1)
+                pass
             except Exception as e:
                 self.get_logger().warn(f'Debug window failed: {e}')
                 self.show_debug = False
@@ -248,7 +249,7 @@ def main(args=None):
         pass
     finally:
         node.destroy_node()
-        cv2.destroyAllWindows()
+        #cv2.destroyAllWindows()
         rclpy.shutdown()
 
 
