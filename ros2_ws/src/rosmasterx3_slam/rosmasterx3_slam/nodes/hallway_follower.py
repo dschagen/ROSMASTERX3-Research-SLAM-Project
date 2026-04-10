@@ -28,6 +28,8 @@ class HallwayFollower(Node):
         self.declare_parameter('front_angle_max_deg', 40.0)
         self.declare_parameter('stop_distance_m', 0.22)
         self.declare_parameter('slow_distance_m', 0.55)
+        self.declare_parameter('wall_backoff_linear', -0.045)
+        self.declare_parameter('wall_turn_boost', 1.2)
         self.declare_parameter('control_period_sec', 0.05)
         self.declare_parameter('discrete_fallback_threshold', 0.06)
 
@@ -144,6 +146,10 @@ class HallwayFollower(Node):
         now = time.monotonic()
         cmd = Twist()
 
+        if not self._vision_ready:
+            self._reset_pid()
+            self.cmd_pub.publish(cmd)
+            return
 
         bias = self.steering_bias
         if (
