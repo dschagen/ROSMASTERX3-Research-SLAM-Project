@@ -28,9 +28,8 @@ class HallwayFollower(Node):
         self.declare_parameter('front_angle_max_deg', 40.0)
         self.declare_parameter('stop_distance_m', 0.22)
         self.declare_parameter('slow_distance_m', 0.55)
-        self.declare_parameter('lidar_timeout_sec', 0.5)
-        self.declare_parameter('camera_timeout_sec', 0.45)
-        self.declare_parameter('require_lidar_before_move', True)
+        self.declare_parameter('wall_backoff_linear', -0.045)
+        self.declare_parameter('wall_turn_boost', 1.2)
         self.declare_parameter('control_period_sec', 0.05)
         self.declare_parameter('discrete_fallback_threshold', 0.06)
 
@@ -51,9 +50,8 @@ class HallwayFollower(Node):
         )
         self._stop_d = self.get_parameter('stop_distance_m').value
         self._slow_d = self.get_parameter('slow_distance_m').value
-        self._lidar_timeout = self.get_parameter('lidar_timeout_sec').value
-        self._camera_timeout = self.get_parameter('camera_timeout_sec').value
-        self._require_lidar = self.get_parameter('require_lidar_before_move').value
+        self._wall_backoff = float(self.get_parameter('wall_backoff_linear').value)
+        self._wall_turn_boost = float(self.get_parameter('wall_turn_boost').value)
         period = float(self.get_parameter('control_period_sec').value)
         self._fb_thresh = float(self.get_parameter('discrete_fallback_threshold').value)
 
@@ -85,28 +83,25 @@ class HallwayFollower(Node):
         self._pid_integral = 0.0
 
         self._forward_range_m = float('nan')
-        self._scan_received = False
-        self._last_scan_time = None
-        self._last_camera_time = None
+        self._vision_ready = False
 
         self.timer = self.create_timer(period, self.publish_command)
 
         self.get_logger().info(
-            'Hallway follower: PID + adaptive speed + LiDAR margins + watchdog. '
-            'Subscribes /hallway_steering_bias, /hallway_direction, /scan'
+            'Hallway follower: PID + camera steering; LiDAR slows / wall backoff + turn. '
+            'No motion watchdogs.'
         )
 
     def bias_callback(self, msg: Float32) -> None:
         self.steering_bias = float(msg.data)
-        self._last_camera_time = time.monotonic()
+        self._vision_ready = True
 
     def direction_callback(self, msg: String) -> None:
         self.latest_direction = msg.data
+        self._vision_ready = True
 
     def scan_callback(self, msg: LaserScan) -> None:
         self._forward_range_m = self._min_range_in_front(msg)
-        self._scan_received = True
-        self._last_scan_time = time.monotonic()
 
     def _min_range_in_front(self, scan: LaserScan) -> float:
         amin = scan.angle_min
@@ -151,22 +146,7 @@ class HallwayFollower(Node):
         now = time.monotonic()
         cmd = Twist()
 
-        if self._last_camera_time is None:
-            self._reset_pid()
-            self.cmd_pub.publish(cmd)
-            return
-
-        if (now - self._last_camera_time) > self._camera_timeout:
-            self._reset_pid()
-            self.cmd_pub.publish(cmd)
-            return
-
-        if self._require_lidar and not self._scan_received:
-            self._reset_pid()
-            self.cmd_pub.publish(cmd)
-            return
-
-        if self._last_scan_time is not None and (now - self._last_scan_time) > self._lidar_timeout:
+        if not self._vision_ready:
             self._reset_pid()
             self.cmd_pub.publish(cmd)
             return
@@ -193,12 +173,13 @@ class HallwayFollower(Node):
 
         linear_x = self._linear_min + (self._linear_max - self._linear_min) * speed_factor
 
-        lidar_scale = 1.0
         if not math.isnan(self._forward_range_m):
             if self._forward_range_m <= self._stop_d:
-                linear_x = 0.0
-                angular_z = 0.0
-                self._reset_pid()
+                linear_x = self._wall_backoff
+                angular_z = max(
+                    -self._angular_max,
+                    min(self._angular_max, angular_z * self._wall_turn_boost),
+                )
             elif self._forward_range_m < self._slow_d:
                 lidar_scale = max(
                     0.0,
@@ -206,10 +187,6 @@ class HallwayFollower(Node):
                     / max(self._slow_d - self._stop_d, 1e-6),
                 )
                 linear_x *= lidar_scale
-
-        if self.latest_direction == 'NONE':
-            linear_x = 0.0
-            angular_z = 0.0
 
         cmd.linear.x = float(linear_x)
         cmd.angular.z = float(angular_z)
