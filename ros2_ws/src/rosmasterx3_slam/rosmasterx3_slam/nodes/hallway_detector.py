@@ -127,13 +127,14 @@ class HallwayDetector(Node):
         self.direction_history.append(direction)
         stable_direction = self.majority_vote(self.direction_history)
 
-        # Continuous steering bias (camera frame): positive when left side is more open
-        # than right (same sign convention as discrete LEFT = positive angular.z).
+        # Continuous steering bias in robot frame (flip-corrected like discrete).
+        # Positive = steer left (positive angular.z).  Negate because scores are in
+        # camera frame and the discrete path already swaps LEFT/RIGHT above.
         total = float(left_score + center_score + right_score) + 1e-6
         if lr_diff < self.diff_threshold:
             bias_raw = 0.0
         else:
-            bias_raw = float(np.clip((left_score - right_score) / total, -1.0, 1.0))
+            bias_raw = -float(np.clip((left_score - right_score) / total, -1.0, 1.0))
 
         self.steering_bias_ema = (
             self.bias_ema_alpha * bias_raw
