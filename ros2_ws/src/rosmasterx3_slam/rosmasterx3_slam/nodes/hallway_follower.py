@@ -75,8 +75,8 @@ class HallwayFollower(Node):
         self._fb_thresh = float(self.get_parameter('discrete_fallback_threshold').value)
         self._diag_interval = float(self.get_parameter('diag_interval_sec').value)
 
-        self.create_subscription(Float32, '/hallway_steering_bias', self.bias_callback, 10)
-        self.create_subscription(String, '/hallway_direction', self.direction_callback, 10)
+        # self.create_subscription(Float32, '/hallway_steering_bias', self.bias_callback, 10)
+        # self.create_subscription(String, '/hallway_direction', self.direction_callback, 10)
         self.create_subscription(LaserScan, '/scan', self.scan_callback, 10)
 
         self.cmd_pub = self.create_publisher(Twist, '/cmd_vel_safe', 10)
@@ -86,7 +86,7 @@ class HallwayFollower(Node):
         self.bias_prev = 0.0
         self.bias_prev_time = None
         self._pid_integral = 0.0
-        self._vision_ready = False
+        self._vision_ready = True
 
         self._front_range = float('nan')
         self._left_range = float('nan')
@@ -194,17 +194,9 @@ class HallwayFollower(Node):
         cmd = Twist()
         self._log_diag(now)
 
-        if not self._vision_ready:
-            self._reset_pid()
-            self.cmd_pub.publish(cmd)
-            return
-
-        # camera bias + side-wall LiDAR correction
+        # side-wall LiDAR correction
         bias = self.steering_bias
-        if abs(bias) < self._fb_thresh and self.latest_direction in ('LEFT', 'RIGHT', 'CENTER'):
-            bias = self._discrete_bias_fallback()
-
-        bias += self._side_wall_correction()
+        bias = self._side_wall_correction()
 
         # PID
         if self.bias_prev_time is None:
