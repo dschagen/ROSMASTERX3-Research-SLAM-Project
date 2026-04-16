@@ -42,8 +42,8 @@ class HallwayFollower(Node):
         self.declare_parameter('side_wall_gain', 0.35)
         self.declare_parameter('side_wall_threshold_m', 0.60)
 
-        # --- LiDAR orientation ---
-        # Set to 180.0 if the LiDAR 0° faces the robot's physical back.
+        # --- motor / LiDAR orientation ---
+        self.declare_parameter('linear_scale', 1.0)
         self.declare_parameter('angle_offset_deg', 0.0)
 
         # --- misc ---
@@ -73,6 +73,7 @@ class HallwayFollower(Node):
         self._side_gain = float(self.get_parameter('side_wall_gain').value)
         self._side_thresh = float(self.get_parameter('side_wall_threshold_m').value)
 
+        self._linear_scale = float(self.get_parameter('linear_scale').value)
         self._angle_offset = math.radians(self.get_parameter('angle_offset_deg').value)
 
         period = float(self.get_parameter('control_period_sec').value)
@@ -235,7 +236,7 @@ class HallwayFollower(Node):
                 scale = (self._front_range - self._stop_d) / max(self._slow_d - self._stop_d, 1e-6)
                 linear_x *= max(0.0, scale)
 
-        cmd.linear.x = float(linear_x)
+        cmd.linear.x = float(linear_x * self._linear_scale)
         cmd.angular.z = float(angular_z)
         self.cmd_pub.publish(cmd)
 

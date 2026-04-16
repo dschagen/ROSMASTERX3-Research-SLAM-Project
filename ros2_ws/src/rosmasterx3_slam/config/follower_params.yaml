@@ -18,10 +18,15 @@ hallway_follower:
     pid_kd: 0.04
     pid_integral_max: 0.20        # anti-windup clamp on the integral term
 
+    # --- motor direction ---
+    # 1.0  = positive linear.x moves robot physically forward (normal)
+    # -1.0 = positive linear.x moves robot physically backward (wiring reversed)
+    linear_scale: -1.0
+
     # --- LiDAR orientation ---
     # 0.0  = LiDAR 0° faces robot forward (normal mounting)
     # 180.0 = LiDAR 0° faces robot backward (flip-mounted or cable-forward)
-    angle_offset_deg: 180.0
+    angle_offset_deg: 0.0
 
     # --- front obstacle sector (±deg from physical forward) ---
     front_angle_min_deg: -40.0
