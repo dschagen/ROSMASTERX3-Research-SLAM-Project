@@ -40,6 +40,7 @@ class WallFollower(Node):
         # --- turn mode (front obstacle) ---
         self.declare_parameter('turn_angular', 0.20)      # angular.z while turning away
         self.declare_parameter('turn_min_time', 0.30)     # minimum seconds in turn mode
+        self.declare_parameter('turn_max_time', 3.0)      # force exit to search after this long
 
         # --- LiDAR geometry ---
         # All angles are in robot frame: 0=forward, 90=left, -90=right.
@@ -78,6 +79,7 @@ class WallFollower(Node):
 
         self._turn_ang = float(self.get_parameter('turn_angular').value)
         self._turn_min_t = float(self.get_parameter('turn_min_time').value)
+        self._turn_max_t = float(self.get_parameter('turn_max_time').value)
 
         self._angle_offset = math.radians(self.get_parameter('angle_offset_deg').value)
 
@@ -202,7 +204,10 @@ class WallFollower(Node):
 
         elif self._mode == 'turn':
             elapsed = now - (self._mode_start or now)
-            if elapsed >= self._turn_min_t and front_clear and (wall_seen or not math.isnan(diag)):
+            if elapsed >= self._turn_max_t:
+                # stuck spinning — drop into search so the robot at least moves
+                self._switch('search', now)
+            elif elapsed >= self._turn_min_t and front_clear:
                 self._switch('follow', now)
 
         elif self._mode == 'search':

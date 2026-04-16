@@ -29,6 +29,7 @@ hallway_follower:
     # --- turn mode (front obstacle) ---
     turn_angular: 0.20            # angular.z (rad/s) while turning away from wall
     turn_min_time: 0.30           # minimum seconds spent turning before exiting
+    turn_max_time: 3.0            # give up and enter search mode after this long
 
     # --- LiDAR geometry ---
     # All angles in robot frame: 0°=forward, 90°=left, -90°=right.
