@@ -45,7 +45,7 @@ class WallFollower(Node):
         # --- LiDAR geometry ---
         # All angles are in robot frame: 0=forward, 90=left, -90=right.
         # Set angle_offset_deg=180 if LiDAR 0° faces robot's physical back.
-        self.declare_parameter('angle_offset_deg', 0.0)
+        self.declare_parameter('angle_offset_deg', 180.0)
         self.declare_parameter('side_inner_deg', 60.0)    # side sector: inner angle from forward
         self.declare_parameter('side_outer_deg', 120.0)   # side sector: outer angle from forward
         self.declare_parameter('diag_inner_deg', 30.0)    # diagonal (corner detection): inner
