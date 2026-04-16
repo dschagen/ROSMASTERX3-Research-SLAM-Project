@@ -1,0 +1,42 @@
+hallway_follower:
+  ros__parameters:
+
+    # --- forward speed (m/s) ---
+    linear_speed_max: 0.10        # top speed when going straight
+    linear_speed_min: 0.05        # minimum speed during sharp turns
+
+    # --- angular limits ---
+    angular_speed_max: 0.35       # cap on angular.z output (rad/s)
+    adaptive_turn_scale: 0.35     # how much turns reduce forward speed (0=none, 1=full)
+
+    # --- PID gains ---
+    # Error signal is side-wall proximity imbalance, range roughly [-1, 1].
+    # Increase kp first; add kd if oscillation persists; ki is typically tiny.
+    turn_gain: 0.45               # final multiplier on PID output before angular_speed_max clamp
+    pid_kp: 0.25
+    pid_ki: 0.008
+    pid_kd: 0.04
+    pid_integral_max: 0.20        # anti-windup clamp on the integral term
+
+    # --- front obstacle sector (±deg from forward) ---
+    front_angle_min_deg: -60.0
+    front_angle_max_deg:  60.0
+    stop_distance_m:  0.20        # back off + forced turn when closer than this
+    slow_distance_m:  0.50        # begin linear speed reduction below this
+
+    # --- wall back-off behaviour ---
+    wall_backoff_linear: -0.06    # reverse speed (m/s) when stop_distance triggered
+    wall_min_turn: 0.25           # minimum angular.z during escape turn
+    wall_turn_boost: 1.5          # multiplier applied to angular.z during escape
+
+    # --- side-wall centering sectors ---
+    # Left sector:  [side_inner_deg,  side_outer_deg]
+    # Right sector: [-side_outer_deg, -side_inner_deg]
+    side_inner_deg: 30.0
+    side_outer_deg: 150.0
+    side_wall_gain: 0.35          # scales proximity imbalance → PID error
+    side_wall_threshold_m: 0.60   # walls beyond this are ignored for centering
+
+    # --- timing ---
+    control_period_sec: 0.05      # 20 Hz control loop
+    diag_interval_sec: 3.0        # how often DIAG lines are logged

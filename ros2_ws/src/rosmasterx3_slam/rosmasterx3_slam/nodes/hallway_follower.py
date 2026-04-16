@@ -8,7 +8,6 @@ from rclpy.node import Node
 
 from geometry_msgs.msg import Twist
 from sensor_msgs.msg import LaserScan
-from std_msgs.msg import Float32, String
 
 
 class HallwayFollower(Node):
@@ -45,7 +44,6 @@ class HallwayFollower(Node):
 
         # --- misc ---
         self.declare_parameter('control_period_sec', 0.05)
-        self.declare_parameter('discrete_fallback_threshold', 0.06)
         self.declare_parameter('diag_interval_sec', 3.0)
 
         self._linear_max = self.get_parameter('linear_speed_max').value
@@ -72,21 +70,15 @@ class HallwayFollower(Node):
         self._side_thresh = float(self.get_parameter('side_wall_threshold_m').value)
 
         period = float(self.get_parameter('control_period_sec').value)
-        self._fb_thresh = float(self.get_parameter('discrete_fallback_threshold').value)
         self._diag_interval = float(self.get_parameter('diag_interval_sec').value)
 
-        # self.create_subscription(Float32, '/hallway_steering_bias', self.bias_callback, 10)
-        # self.create_subscription(String, '/hallway_direction', self.direction_callback, 10)
         self.create_subscription(LaserScan, '/scan', self.scan_callback, 10)
 
         self.cmd_pub = self.create_publisher(Twist, '/cmd_vel_safe', 10)
 
-        self.latest_direction = 'NONE'
-        self.steering_bias = 0.0
         self.bias_prev = 0.0
         self.bias_prev_time = None
         self._pid_integral = 0.0
-        self._vision_ready = True
 
         self._front_range = float('nan')
         self._left_range = float('nan')
@@ -97,18 +89,10 @@ class HallwayFollower(Node):
         self.timer = self.create_timer(period, self.publish_command)
 
         self.get_logger().info(
-            'Hallway follower v2: softer PID, side-wall LiDAR, wider front sector ±60°'
+            'Hallway follower v2: PID on side-wall LiDAR, front sector ±60°'
         )
 
     # ---- callbacks ----
-
-    def bias_callback(self, msg: Float32) -> None:
-        self.steering_bias = float(msg.data)
-        self._vision_ready = True
-
-    def direction_callback(self, msg: String) -> None:
-        self.latest_direction = msg.data
-        self._vision_ready = True
 
     def scan_callback(self, msg: LaserScan) -> None:
         self._front_range = self._sector_min(msg, self._front_min_rad, self._front_max_rad)
@@ -153,13 +137,6 @@ class HallwayFollower(Node):
         self.bias_prev = 0.0
         self.bias_prev_time = None
 
-    def _discrete_bias_fallback(self) -> float:
-        if self.latest_direction == 'LEFT':
-            return 0.30
-        if self.latest_direction == 'RIGHT':
-            return -0.30
-        return 0.0
-
     def _pid_step(self, bias: float, dt: float) -> float:
         self._pid_integral = float(
             max(-self._i_max, min(self._i_max, self._pid_integral + bias * dt))
@@ -182,9 +159,7 @@ class HallwayFollower(Node):
         ls = f'{l:.2f}' if not math.isnan(l) else 'nan'
         rs = f'{r:.2f}' if not math.isnan(r) else 'nan'
         self.get_logger().info(
-            f'DIAG | front={fs} left={ls} right={rs} '
-            f'bias={self.steering_bias:.3f} dir={self.latest_direction} '
-            f'scan_rx={self._scan_received}'
+            f'DIAG | front={fs} left={ls} right={rs} scan_rx={self._scan_received}'
         )
 
     # ---- main control loop ----
@@ -195,7 +170,6 @@ class HallwayFollower(Node):
         self._log_diag(now)
 
         # side-wall LiDAR correction
-        bias = self.steering_bias
         bias = self._side_wall_correction()
 
         # PID
@@ -220,7 +194,7 @@ class HallwayFollower(Node):
                 self._reset_pid()
 
                 # Pick escape direction from side LiDAR (more space = turn toward it).
-                # Fall back to camera bias sign if no side data.
+                # Fall back to current angular_z sign if no side data.
                 lr = self._left_range
                 rr = self._right_range
                 have_left = not math.isnan(lr)
