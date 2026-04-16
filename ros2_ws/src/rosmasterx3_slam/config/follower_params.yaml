@@ -1,52 +1,51 @@
 hallway_follower:
   ros__parameters:
 
-    # --- forward speed (m/s) ---
-    linear_speed_max: 0.10        # top speed when going straight
-    linear_speed_min: 0.05        # minimum speed during sharp turns
+    # --- wall selection ---
+    wall_side: "left"             # "left" or "right"
+    wall_target_m: 0.30           # target distance from wall (metres)
 
-    # --- angular limits ---
-    angular_speed_max: 0.35       # cap on angular.z output (rad/s)
-    adaptive_turn_scale: 0.35     # how much turns reduce forward speed (0=none, 1=full)
+    # --- forward speed ---
+    cruise_speed: 0.10            # m/s straight ahead
+    search_speed: 0.07            # m/s when wall is lost
+    linear_scale: 1.0             # set to -1.0 if motors are wired backwards
 
-    # --- PID gains ---
-    # Error signal is side-wall proximity imbalance, range roughly [-1, 1].
-    # Increase kp first; add kd if oscillation persists; ki is typically tiny.
-    turn_gain: 0.45               # final multiplier on PID output before angular_speed_max clamp
-    pid_kp: 0.25
-    pid_ki: 0.008
-    pid_kd: 0.04
-    pid_integral_max: 0.20        # anti-windup clamp on the integral term
+    # --- side-wall PD (no integral) ---
+    # error = measured_side - wall_target  (positive = too far, negative = too close)
+    # Increase kp first. Add kd if the robot oscillates side to side.
+    kp_side: 0.40
+    kd_side: 0.80
+    angular_max: 0.35             # rad/s cap on all angular output
 
-    # --- motor direction ---
-    # 1.0  = positive linear.x moves robot physically forward (normal)
-    # -1.0 = positive linear.x moves robot physically backward (wiring reversed)
-    linear_scale: -1.0
+    # --- front obstacle ---
+    front_stop_m: 0.25            # stop + enter turn mode below this
+    front_slow_m: 0.55            # begin linear speed ramp below this
+    front_half_angle_deg: 40.0    # front sector spans ±this from forward
 
-    # --- LiDAR orientation ---
-    # 0.0  = LiDAR 0° faces robot forward (normal mounting)
-    # 180.0 = LiDAR 0° faces robot backward (flip-mounted or cable-forward)
+    # --- corner mode (wall opens up at a corner) ---
+    corner_open_m: 0.15           # wall must open this far past target to trigger
+    corner_turn: 0.18             # angular.z (rad/s) while wrapping the corner
+
+    # --- turn mode (front obstacle) ---
+    turn_angular: 0.20            # angular.z (rad/s) while turning away from wall
+    turn_min_time: 0.30           # minimum seconds spent turning before exiting
+
+    # --- LiDAR geometry ---
+    # All angles in robot frame: 0°=forward, 90°=left, -90°=right.
+    # angle_offset_deg: rotate raw scan into robot frame.
+    #   0.0   = LiDAR 0° faces forward (normal)
+    #   180.0 = LiDAR 0° faces backward
     angle_offset_deg: 0.0
 
-    # --- front obstacle sector (±deg from physical forward) ---
-    front_angle_min_deg: -40.0
-    front_angle_max_deg:  40.0
-    stop_distance_m:  0.25        # back off + forced turn when closer than this
-    slow_distance_m:  0.50        # begin linear speed reduction below this
+    # Side sector: perpendicular to robot, ±inner to ±outer from forward.
+    # Mirrored automatically for right-wall following.
+    side_inner_deg: 60.0
+    side_outer_deg: 120.0
 
-    # --- wall back-off behaviour ---
-    wall_backoff_linear: -0.06    # reverse speed (m/s) when stop_distance triggered
-    wall_min_turn: 0.15           # minimum angular.z during escape turn
-    wall_turn_boost: 1.2          # multiplier applied to angular.z during escape
-
-    # --- side-wall centering sectors ---
-    # Left sector:  [side_inner_deg,  side_outer_deg]  from physical forward
-    # Right sector: [-side_outer_deg, -side_inner_deg] from physical forward
-    side_inner_deg: 45.0
-    side_outer_deg: 135.0
-    side_wall_gain: 0.25          # scales proximity imbalance → PID error
-    side_wall_threshold_m: 0.60   # walls beyond this are ignored for centering
+    # Diagonal sector: used to detect the next wall during a corner wrap.
+    diag_inner_deg: 30.0
+    diag_outer_deg: 65.0
 
     # --- timing ---
     control_period_sec: 0.05      # 20 Hz control loop
-    diag_interval_sec: 3.0        # how often DIAG lines are logged
+    diag_interval_sec: 3.0        # seconds between DIAG log lines

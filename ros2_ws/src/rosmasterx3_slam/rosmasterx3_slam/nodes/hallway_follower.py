@@ -10,249 +10,271 @@ from geometry_msgs.msg import Twist
 from sensor_msgs.msg import LaserScan
 
 
-class HallwayFollower(Node):
+class WallFollower(Node):
     def __init__(self):
         super().__init__('hallway_follower')
 
-        # --- speed ---
-        self.declare_parameter('linear_speed_max', 0.10)
-        self.declare_parameter('linear_speed_min', 0.05)
-        self.declare_parameter('angular_speed_max', 0.35)
-        self.declare_parameter('adaptive_turn_scale', 0.35)
+        # --- wall selection ---
+        self.declare_parameter('wall_side', 'left')       # 'left' or 'right'
+        self.declare_parameter('wall_target_m', 0.30)     # target distance from wall (m)
 
-        # --- PID (softened to prevent sway) ---
-        self.declare_parameter('turn_gain', 0.45)
-        self.declare_parameter('pid_kp', 0.25)
-        self.declare_parameter('pid_ki', 0.008)
-        self.declare_parameter('pid_kd', 0.04)
-        self.declare_parameter('pid_integral_max', 0.20)
+        # --- forward speed ---
+        self.declare_parameter('cruise_speed', 0.10)      # m/s straight ahead
+        self.declare_parameter('search_speed', 0.07)      # m/s when wall is lost
+        self.declare_parameter('linear_scale', 1.0)       # -1.0 if motors are wired backwards
 
-        # --- front LiDAR sector (widened) ---
-        self.declare_parameter('front_angle_min_deg', -60.0)
-        self.declare_parameter('front_angle_max_deg', 60.0)
-        self.declare_parameter('stop_distance_m', 0.20)
-        self.declare_parameter('slow_distance_m', 0.50)
-        self.declare_parameter('wall_backoff_linear', -0.06)
-        self.declare_parameter('wall_min_turn', 0.25)
-        self.declare_parameter('wall_turn_boost', 1.5)
+        # --- side-wall PD (no integral) ---
+        self.declare_parameter('kp_side', 0.40)
+        self.declare_parameter('kd_side', 0.80)
+        self.declare_parameter('angular_max', 0.35)       # rad/s cap
 
-        # --- side-wall LiDAR sectors (new: keeps robot centered) ---
-        self.declare_parameter('side_inner_deg', 30.0)
-        self.declare_parameter('side_outer_deg', 150.0)
-        self.declare_parameter('side_wall_gain', 0.35)
-        self.declare_parameter('side_wall_threshold_m', 0.60)
+        # --- front obstacle ---
+        self.declare_parameter('front_stop_m', 0.25)      # stop + turn below this
+        self.declare_parameter('front_slow_m', 0.55)      # begin slowing below this
+        self.declare_parameter('front_half_angle_deg', 40.0)
 
-        # --- motor / LiDAR orientation ---
-        self.declare_parameter('linear_scale', 1.0)
+        # --- corner mode (wall suddenly opens up) ---
+        self.declare_parameter('corner_open_m', 0.15)     # wall must open this far past target
+        self.declare_parameter('corner_turn', 0.18)       # angular.z while wrapping corner
+
+        # --- turn mode (front obstacle) ---
+        self.declare_parameter('turn_angular', 0.20)      # angular.z while turning away
+        self.declare_parameter('turn_min_time', 0.30)     # minimum seconds in turn mode
+
+        # --- LiDAR geometry ---
+        # All angles are in robot frame: 0=forward, 90=left, -90=right.
+        # Set angle_offset_deg=180 if LiDAR 0° faces robot's physical back.
         self.declare_parameter('angle_offset_deg', 0.0)
+        self.declare_parameter('side_inner_deg', 60.0)    # side sector: inner angle from forward
+        self.declare_parameter('side_outer_deg', 120.0)   # side sector: outer angle from forward
+        self.declare_parameter('diag_inner_deg', 30.0)    # diagonal (corner detection): inner
+        self.declare_parameter('diag_outer_deg', 65.0)    # diagonal: outer
 
         # --- misc ---
         self.declare_parameter('control_period_sec', 0.05)
         self.declare_parameter('diag_interval_sec', 3.0)
 
-        self._linear_max = self.get_parameter('linear_speed_max').value
-        self._linear_min = self.get_parameter('linear_speed_min').value
-        self._angular_max = self.get_parameter('angular_speed_max').value
-        self._adaptive_scale = self.get_parameter('adaptive_turn_scale').value
-        self._turn_gain = self.get_parameter('turn_gain').value
-        self._kp = self.get_parameter('pid_kp').value
-        self._ki = self.get_parameter('pid_ki').value
-        self._kd = self.get_parameter('pid_kd').value
-        self._i_max = self.get_parameter('pid_integral_max').value
+        # ---- read all params ----
+        wall_side_str = self.get_parameter('wall_side').value
+        self._wall_sign = 1.0 if wall_side_str == 'left' else -1.0
+        self._wall_target = float(self.get_parameter('wall_target_m').value)
 
-        self._front_min_rad = math.radians(self.get_parameter('front_angle_min_deg').value)
-        self._front_max_rad = math.radians(self.get_parameter('front_angle_max_deg').value)
-        self._stop_d = self.get_parameter('stop_distance_m').value
-        self._slow_d = self.get_parameter('slow_distance_m').value
-        self._wall_backoff = float(self.get_parameter('wall_backoff_linear').value)
-        self._wall_min_turn = float(self.get_parameter('wall_min_turn').value)
-        self._wall_turn_boost = float(self.get_parameter('wall_turn_boost').value)
-
-        self._side_inner_rad = math.radians(self.get_parameter('side_inner_deg').value)
-        self._side_outer_rad = math.radians(self.get_parameter('side_outer_deg').value)
-        self._side_gain = float(self.get_parameter('side_wall_gain').value)
-        self._side_thresh = float(self.get_parameter('side_wall_threshold_m').value)
-
+        self._cruise = float(self.get_parameter('cruise_speed').value)
+        self._search_spd = float(self.get_parameter('search_speed').value)
         self._linear_scale = float(self.get_parameter('linear_scale').value)
+
+        self._kp = float(self.get_parameter('kp_side').value)
+        self._kd = float(self.get_parameter('kd_side').value)
+        self._ang_max = float(self.get_parameter('angular_max').value)
+
+        self._front_stop = float(self.get_parameter('front_stop_m').value)
+        self._front_slow = float(self.get_parameter('front_slow_m').value)
+        half = math.radians(self.get_parameter('front_half_angle_deg').value)
+        self._front_lo = -half
+        self._front_hi = half
+
+        self._corner_open = float(self.get_parameter('corner_open_m').value)
+        self._corner_turn = float(self.get_parameter('corner_turn').value)
+
+        self._turn_ang = float(self.get_parameter('turn_angular').value)
+        self._turn_min_t = float(self.get_parameter('turn_min_time').value)
+
         self._angle_offset = math.radians(self.get_parameter('angle_offset_deg').value)
+
+        si = math.radians(self.get_parameter('side_inner_deg').value)
+        so = math.radians(self.get_parameter('side_outer_deg').value)
+        di = math.radians(self.get_parameter('diag_inner_deg').value)
+        do_ = math.radians(self.get_parameter('diag_outer_deg').value)
+
+        # mirror sectors for right-wall following (negative angles)
+        s = self._wall_sign
+        self._side_lo = min(s * si, s * so)
+        self._side_hi = max(s * si, s * so)
+        self._diag_lo = min(s * di, s * do_)
+        self._diag_hi = max(s * di, s * do_)
 
         period = float(self.get_parameter('control_period_sec').value)
         self._diag_interval = float(self.get_parameter('diag_interval_sec').value)
 
         self.create_subscription(LaserScan, '/scan', self.scan_callback, 10)
-
         self.cmd_pub = self.create_publisher(Twist, '/cmd_vel_safe', 10)
 
-        self.bias_prev = 0.0
-        self.bias_prev_time = None
-        self._pid_integral = 0.0
-
+        # sensor state
         self._front_range = float('nan')
-        self._left_range = float('nan')
-        self._right_range = float('nan')
+        self._side_range = float('nan')
+        self._diag_range = float('nan')
         self._scan_received = False
+
+        # controller state
+        self._prev_err = 0.0
+        self._prev_time = None
+        self._mode = 'follow'      # follow | corner | turn | search
+        self._mode_start = None
         self._last_diag_time = 0.0
 
         self.timer = self.create_timer(period, self.publish_command)
-
         self.get_logger().info(
-            'Hallway follower v2: PID on side-wall LiDAR, front sector ±60°'
+            f'Wall follower ready — wall={wall_side_str}  target={self._wall_target:.2f}m'
         )
 
-    # ---- callbacks ----
+    # ------------------------------------------------------------------ scan --
 
     def scan_callback(self, msg: LaserScan) -> None:
         off = self._angle_offset
-        self._front_range = self._sector_min(msg, self._front_min_rad, self._front_max_rad, off)
-        self._left_range = self._sector_min(msg, self._side_inner_rad, self._side_outer_rad, off)
-        self._right_range = self._sector_min(msg, -self._side_outer_rad, -self._side_inner_rad, off)
+        self._front_range = self._sector_min(msg, self._front_lo, self._front_hi, off)
+        self._side_range = self._sector_min(msg, self._side_lo, self._side_hi, off)
+        self._diag_range = self._sector_min(msg, self._diag_lo, self._diag_hi, off)
         self._scan_received = True
 
-    # ---- LiDAR helpers ----
-
     @staticmethod
-    def _sector_min(scan: LaserScan, ang_lo: float, ang_hi: float, offset: float = 0.0) -> float:
-        """Return the minimum valid range in a sector.
+    def _sector_min(scan: LaserScan, ang_lo: float, ang_hi: float,
+                    offset: float = 0.0) -> float:
+        """Minimum valid range in a robot-frame angular sector.
 
-        ang_lo / ang_hi are in robot-frame radians (0 = physical forward).
         offset rotates raw scan angles into robot frame:
             ang_robot = ((ang_raw - offset + pi) % 2pi) - pi
-        Set offset=pi when the LiDAR 0° faces the robot's physical back.
         """
         amin = scan.angle_min
         ainc = scan.angle_increment
         two_pi = 2.0 * math.pi
         rmin = float('inf')
         for i in range(len(scan.ranges)):
-            ang_raw = amin + i * ainc
-            ang = ((ang_raw - offset + math.pi) % two_pi) - math.pi
+            ang = ((amin + i * ainc - offset + math.pi) % two_pi) - math.pi
             if ang < ang_lo or ang > ang_hi:
                 continue
             r = scan.ranges[i]
-            if math.isnan(r) or math.isinf(r):
+            if math.isnan(r) or math.isinf(r) or r < scan.range_min or r > scan.range_max:
                 continue
-            if r < scan.range_min or r > scan.range_max:
-                continue
-            rmin = min(rmin, r)
+            if r < rmin:
+                rmin = r
         return rmin if rmin != float('inf') else float('nan')
 
-    def _side_wall_correction(self) -> float:
-        """Push robot away from the closer side wall."""
-        def proximity(r: float) -> float:
-            if math.isnan(r) or r > self._side_thresh:
-                return 0.0
-            return max(0.0, (self._side_thresh - r) / self._side_thresh)
+    # --------------------------------------------------------------- helpers --
 
-        lp = proximity(self._left_range)
-        rp = proximity(self._right_range)
-        return self._side_gain * (rp - lp)
+    def _forward_speed(self, front: float) -> float:
+        """Cruise speed, ramped down as front wall approaches."""
+        if math.isnan(front) or front >= self._front_slow:
+            return self._cruise
+        if front <= self._front_stop:
+            return 0.0
+        t = (front - self._front_stop) / (self._front_slow - self._front_stop)
+        return self._cruise * t
 
-    # ---- PID ----
+    @staticmethod
+    def _clamp(v: float, limit: float) -> float:
+        return max(-limit, min(limit, v))
 
-    def _reset_pid(self) -> None:
-        self._pid_integral = 0.0
-        self.bias_prev = 0.0
-        self.bias_prev_time = None
-
-    def _pid_step(self, bias: float, dt: float) -> float:
-        self._pid_integral = float(
-            max(-self._i_max, min(self._i_max, self._pid_integral + bias * dt))
-        )
-        d_term = (bias - self.bias_prev) / dt if dt > 1e-6 else 0.0
-        out = self._kp * bias + self._ki * self._pid_integral + self._kd * d_term
-        self.bias_prev = bias
-        return max(-self._angular_max, min(self._angular_max, out * self._turn_gain))
-
-    # ---- diagnostics ----
-
-    def _log_diag(self, now: float) -> None:
-        if (now - self._last_diag_time) < self._diag_interval:
-            return
-        self._last_diag_time = now
-        f = self._front_range
-        l = self._left_range
-        r = self._right_range
-        fs = f'{f:.2f}' if not math.isnan(f) else 'nan'
-        ls = f'{l:.2f}' if not math.isnan(l) else 'nan'
-        rs = f'{r:.2f}' if not math.isnan(r) else 'nan'
-        self.get_logger().info(
-            f'DIAG | front={fs} left={ls} right={rs} scan_rx={self._scan_received}'
-        )
-
-    # ---- main control loop ----
+    # -------------------------------------------------------------- control --
 
     def publish_command(self) -> None:
         if not self._scan_received:
             return
 
         now = time.monotonic()
+        dt = 0.05 if self._prev_time is None else max(1e-3, now - self._prev_time)
+        self._prev_time = now
+
+        front = self._front_range
+        side = self._side_range
+        diag = self._diag_range
+
+        wall_seen = not math.isnan(side)
+        front_blocked = not math.isnan(front) and front <= self._front_stop
+        front_clear = not front_blocked
+
+        # ---- mode transitions ----
+        if self._mode == 'follow':
+            if front_blocked:
+                self._switch('turn', now)
+            elif wall_seen and side > self._wall_target + self._corner_open:
+                self._switch('corner', now)
+            elif not wall_seen:
+                self._switch('search', now)
+
+        elif self._mode == 'corner':
+            if front_blocked:
+                self._switch('turn', now)
+            else:
+                diag_close = not math.isnan(diag) and diag <= self._wall_target + self._corner_open
+                side_back = wall_seen and side <= self._wall_target + self._corner_open
+                if diag_close or side_back:
+                    self._switch('follow', now)
+
+        elif self._mode == 'turn':
+            elapsed = now - (self._mode_start or now)
+            if elapsed >= self._turn_min_t and front_clear and (wall_seen or not math.isnan(diag)):
+                self._switch('follow', now)
+
+        elif self._mode == 'search':
+            if wall_seen:
+                self._switch('follow', now)
+            elif front_blocked:
+                self._switch('turn', now)
+
+        # ---- compute output ----
         cmd = Twist()
-        self._log_diag(now)
 
-        # side-wall LiDAR correction
-        bias = self._side_wall_correction()
+        if self._mode == 'turn':
+            # spin in place away from the wall side
+            cmd.linear.x = 0.0
+            cmd.angular.z = float(-self._wall_sign * self._turn_ang)
 
-        # PID
-        if self.bias_prev_time is None:
-            dt = 0.05
-        else:
-            dt = max(1e-3, now - self.bias_prev_time)
-        self.bias_prev_time = now
+        elif self._mode == 'corner':
+            # move forward while curving toward the wall
+            speed = self._forward_speed(front)
+            cmd.linear.x = float(speed * self._linear_scale)
+            cmd.angular.z = float(self._wall_sign * self._corner_turn)
 
-        angular_z = self._pid_step(bias, dt)
+        elif self._mode == 'search':
+            # slow forward + gentle turn toward wall side
+            cmd.linear.x = float(self._search_spd * self._linear_scale)
+            cmd.angular.z = float(self._wall_sign * self._corner_turn * 0.5)
 
-        # adaptive forward speed: less speed during turns
-        turn_mag = abs(angular_z) / max(self._angular_max, 1e-6)
-        speed_factor = 1.0 - self._adaptive_scale * turn_mag
-        speed_factor = max(0.0, min(1.0, speed_factor))
-        linear_x = self._linear_min + (self._linear_max - self._linear_min) * speed_factor
+        else:  # follow
+            speed = self._forward_speed(front)
+            if wall_seen:
+                err = side - self._wall_target
+                d_term = self._clamp((err - self._prev_err) / dt, 10.0)
+                raw = self._wall_sign * (self._kp * err + self._kd * d_term)
+                angular_z = self._clamp(raw, self._ang_max)
+                self._prev_err = err
+            else:
+                angular_z = 0.0
+            cmd.linear.x = float(speed * self._linear_scale)
+            cmd.angular.z = float(angular_z)
 
-        # front LiDAR: slow down or back off + forced turn
-        if not math.isnan(self._front_range):
-            if self._front_range <= self._stop_d:
-                linear_x = self._wall_backoff
-                self._reset_pid()
-
-                # Pick escape direction from side LiDAR (more space = turn toward it).
-                # Fall back to current angular_z sign if no side data.
-                lr = self._left_range
-                rr = self._right_range
-                have_left = not math.isnan(lr)
-                have_right = not math.isnan(rr)
-
-                if have_left and have_right:
-                    turn_sign = 1.0 if lr >= rr else -1.0
-                elif have_left:
-                    turn_sign = 1.0
-                elif have_right:
-                    turn_sign = -1.0
-                else:
-                    turn_sign = 1.0 if angular_z >= 0 else -1.0
-
-                angular_z = turn_sign * max(self._wall_min_turn, abs(angular_z) * self._wall_turn_boost)
-                angular_z = max(-self._angular_max, min(self._angular_max, angular_z))
-
-            elif self._front_range < self._slow_d:
-                scale = (self._front_range - self._stop_d) / max(self._slow_d - self._stop_d, 1e-6)
-                linear_x *= max(0.0, scale)
-
-        cmd.linear.x = float(linear_x * self._linear_scale)
-        cmd.angular.z = float(angular_z)
+        self._log_diag(now, front, side, diag)
         self.cmd_pub.publish(cmd)
+
+    def _switch(self, mode: str, now: float) -> None:
+        self._mode = mode
+        self._mode_start = now
+        self._prev_err = 0.0
+
+    # ---------------------------------------------------------- diagnostics --
+
+    def _log_diag(self, now: float, front: float, side: float, diag: float) -> None:
+        if (now - self._last_diag_time) < self._diag_interval:
+            return
+        self._last_diag_time = now
+        fmt = lambda v: f'{v:.2f}' if not math.isnan(v) else 'nan'
+        self.get_logger().info(
+            f'DIAG | mode={self._mode:6s} front={fmt(front)} '
+            f'side={fmt(side)} diag={fmt(diag)}'
+        )
 
 
 def main(args=None):
     rclpy.init(args=args)
-    node = HallwayFollower()
-
+    node = WallFollower()
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
         pass
     finally:
-        stop_cmd = Twist()
-        for _ in range(10):
-            node.cmd_pub.publish(stop_cmd)
+        stop = Twist()
+        for _ in range(20):
+            node.cmd_pub.publish(stop)
             time.sleep(0.02)
         node.destroy_node()
         rclpy.shutdown()
