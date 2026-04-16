@@ -36,7 +36,7 @@ hallway_follower:
     # angle_offset_deg: rotate raw scan into robot frame.
     #   0.0   = LiDAR 0° faces forward (normal)
     #   180.0 = LiDAR 0° faces backward
-    angle_offset_deg: 0.0
+    angle_offset_deg: 180.0
 
     # Side sector: perpendicular to robot, ±inner to ±outer from forward.
     # Mirrored automatically for right-wall following.
