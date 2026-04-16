@@ -42,6 +42,10 @@ class HallwayFollower(Node):
         self.declare_parameter('side_wall_gain', 0.35)
         self.declare_parameter('side_wall_threshold_m', 0.60)
 
+        # --- LiDAR orientation ---
+        # Set to 180.0 if the LiDAR 0° faces the robot's physical back.
+        self.declare_parameter('angle_offset_deg', 0.0)
+
         # --- misc ---
         self.declare_parameter('control_period_sec', 0.05)
         self.declare_parameter('diag_interval_sec', 3.0)
@@ -69,6 +73,8 @@ class HallwayFollower(Node):
         self._side_gain = float(self.get_parameter('side_wall_gain').value)
         self._side_thresh = float(self.get_parameter('side_wall_threshold_m').value)
 
+        self._angle_offset = math.radians(self.get_parameter('angle_offset_deg').value)
+
         period = float(self.get_parameter('control_period_sec').value)
         self._diag_interval = float(self.get_parameter('diag_interval_sec').value)
 
@@ -95,20 +101,30 @@ class HallwayFollower(Node):
     # ---- callbacks ----
 
     def scan_callback(self, msg: LaserScan) -> None:
-        self._front_range = self._sector_min(msg, self._front_min_rad, self._front_max_rad)
-        self._left_range = self._sector_min(msg, self._side_inner_rad, self._side_outer_rad)
-        self._right_range = self._sector_min(msg, -self._side_outer_rad, -self._side_inner_rad)
+        off = self._angle_offset
+        self._front_range = self._sector_min(msg, self._front_min_rad, self._front_max_rad, off)
+        self._left_range = self._sector_min(msg, self._side_inner_rad, self._side_outer_rad, off)
+        self._right_range = self._sector_min(msg, -self._side_outer_rad, -self._side_inner_rad, off)
         self._scan_received = True
 
     # ---- LiDAR helpers ----
 
     @staticmethod
-    def _sector_min(scan: LaserScan, ang_lo: float, ang_hi: float) -> float:
+    def _sector_min(scan: LaserScan, ang_lo: float, ang_hi: float, offset: float = 0.0) -> float:
+        """Return the minimum valid range in a sector.
+
+        ang_lo / ang_hi are in robot-frame radians (0 = physical forward).
+        offset rotates raw scan angles into robot frame:
+            ang_robot = ((ang_raw - offset + pi) % 2pi) - pi
+        Set offset=pi when the LiDAR 0° faces the robot's physical back.
+        """
         amin = scan.angle_min
         ainc = scan.angle_increment
+        two_pi = 2.0 * math.pi
         rmin = float('inf')
         for i in range(len(scan.ranges)):
-            ang = amin + i * ainc
+            ang_raw = amin + i * ainc
+            ang = ((ang_raw - offset + math.pi) % two_pi) - math.pi
             if ang < ang_lo or ang > ang_hi:
                 continue
             r = scan.ranges[i]
@@ -165,6 +181,9 @@ class HallwayFollower(Node):
     # ---- main control loop ----
 
     def publish_command(self) -> None:
+        if not self._scan_received:
+            return
+
         now = time.monotonic()
         cmd = Twist()
         self._log_diag(now)
@@ -231,7 +250,9 @@ def main(args=None):
         pass
     finally:
         stop_cmd = Twist()
-        node.cmd_pub.publish(stop_cmd)
+        for _ in range(10):
+            node.cmd_pub.publish(stop_cmd)
+            time.sleep(0.02)
         node.destroy_node()
         rclpy.shutdown()
 

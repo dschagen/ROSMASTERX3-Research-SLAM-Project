@@ -18,23 +18,28 @@ hallway_follower:
     pid_kd: 0.04
     pid_integral_max: 0.20        # anti-windup clamp on the integral term
 
-    # --- front obstacle sector (±deg from forward) ---
-    front_angle_min_deg: -60.0
-    front_angle_max_deg:  60.0
-    stop_distance_m:  0.20        # back off + forced turn when closer than this
+    # --- LiDAR orientation ---
+    # 0.0  = LiDAR 0° faces robot forward (normal mounting)
+    # 180.0 = LiDAR 0° faces robot backward (flip-mounted or cable-forward)
+    angle_offset_deg: 180.0
+
+    # --- front obstacle sector (±deg from physical forward) ---
+    front_angle_min_deg: -40.0
+    front_angle_max_deg:  40.0
+    stop_distance_m:  0.25        # back off + forced turn when closer than this
     slow_distance_m:  0.50        # begin linear speed reduction below this
 
     # --- wall back-off behaviour ---
     wall_backoff_linear: -0.06    # reverse speed (m/s) when stop_distance triggered
-    wall_min_turn: 0.25           # minimum angular.z during escape turn
-    wall_turn_boost: 1.5          # multiplier applied to angular.z during escape
+    wall_min_turn: 0.15           # minimum angular.z during escape turn
+    wall_turn_boost: 1.2          # multiplier applied to angular.z during escape
 
     # --- side-wall centering sectors ---
-    # Left sector:  [side_inner_deg,  side_outer_deg]
-    # Right sector: [-side_outer_deg, -side_inner_deg]
-    side_inner_deg: 30.0
-    side_outer_deg: 150.0
-    side_wall_gain: 0.35          # scales proximity imbalance → PID error
+    # Left sector:  [side_inner_deg,  side_outer_deg]  from physical forward
+    # Right sector: [-side_outer_deg, -side_inner_deg] from physical forward
+    side_inner_deg: 45.0
+    side_outer_deg: 135.0
+    side_wall_gain: 0.25          # scales proximity imbalance → PID error
     side_wall_threshold_m: 0.60   # walls beyond this are ignored for centering
 
     # --- timing ---
