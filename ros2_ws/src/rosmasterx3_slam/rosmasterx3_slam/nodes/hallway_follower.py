@@ -106,6 +106,11 @@ class WallFollower(Node):
         self._side_range = float('nan')
         self._diag_range = float('nan')
         self._scan_received = False
+        
+        # startup calibration
+        self._calibrated = False
+        self._calib_samples = []
+        self._calib_target = 5 
 
         # controller state
         self._prev_err = 0.0
@@ -172,6 +177,25 @@ class WallFollower(Node):
         if not self._scan_received:
             return
 
+    # startup calibration — sample the wall distance and store it
+        if not self._calibrated:
+            if not math.isnan(self._side_range):
+                self._calib_samples.append(self._side_range)
+                self.get_logger().info(
+                    f'Calibrating... sample {len(self._calib_samples)}'
+                    f'/{self._calib_target}: {self._side_range:.3f}m'
+                )
+            if len(self._calib_samples) >= self._calib_target:
+                self._wall_target = sum(self._calib_samples) / len(self._calib_samples)
+                self._calibrated = True
+                self.get_logger().info(
+                    f'Wall target calibrated to {self._wall_target:.3f}m'
+                )
+            else:
+                # sit still and publish zero while calibrating
+                self.cmd_pub.publish(Twist())
+                return
+    
         now = time.monotonic()
         dt = 0.05 if self._prev_time is None else max(1e-3, now - self._prev_time)
         self._prev_time = now
