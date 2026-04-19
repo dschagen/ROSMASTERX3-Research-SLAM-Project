@@ -177,7 +177,7 @@ class WallFollower(Node):
         if not self._scan_received:
             return
 
-    # startup calibration — sample the wall distance and store it
+        # startup calibration — sample the wall distance and store it
         if not self._calibrated:
             if not math.isnan(self._side_range):
                 self._calib_samples.append(self._side_range)

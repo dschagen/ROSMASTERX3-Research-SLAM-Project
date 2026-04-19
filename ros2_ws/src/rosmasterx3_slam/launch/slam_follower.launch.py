@@ -1,6 +1,7 @@
 from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch_ros.actions import Node
 
 from ament_index_python.packages import get_package_share_directory
 import os
@@ -11,17 +12,26 @@ def generate_launch_description():
 
     return LaunchDescription([
 
-        # Hardware layer (bringup + LiDAR + TF)
+        # Hardware layer (bringup + LiDAR + TF) — runs once
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(
                 os.path.join(pkg, 'launch', 'bringup.launch.py')
             )
         ),
 
-        # SLAM stack (scan_monitor + slam_toolbox)
+        # SLAM (scan_monitor + slam_toolbox)
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(
                 os.path.join(pkg, 'launch', 'mapping.launch.py')
             )
+        ),
+
+        # Wall follower
+        Node(
+            package='rosmasterx3_slam',
+            executable='hallway_follower',
+            name='hallway_follower',
+            output='screen',
+            parameters=[os.path.join(pkg, 'config', 'follower_params.yaml')]
         ),
     ])
