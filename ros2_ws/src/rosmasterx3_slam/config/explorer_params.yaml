@@ -1,0 +1,27 @@
+frontier_explorer:
+  ros__parameters:
+
+    # How often to re-scan the map for new frontiers (seconds)
+    # Map publishes at ~0.5 Hz so no point checking faster than 2.0s
+    update_rate_sec: 3.0
+
+    # Minimum connected frontier cells to count as a valid frontier
+    # Increase to filter out noise / tiny map gaps
+    min_frontier_size: 5
+
+    # Distance in metres at which we consider a frontier goal reached
+    goal_reached_dist_m: 0.40
+
+    # Re-pick frontier if robot hasn't reached it within this many seconds
+    stuck_timeout_sec: 8.0
+
+    # Radius around a visited frontier to blacklist (metres)
+    # Prevents re-picking frontiers we've already explored
+    visited_radius_m: 0.50
+
+    # Declare exploration complete if no frontiers found for this long (seconds)
+    exploration_complete_sec: 6.0
+
+    # How often to re-publish the current goal to /exploration_goal (seconds)
+    # Keep this fast so the follower always has fresh heading data
+    publish_rate_sec: 0.2

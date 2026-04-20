@@ -3,50 +3,52 @@ hallway_follower:
 
     # --- wall selection ---
     wall_side: "left"             # "left" or "right"
-    wall_target_m: 0.30           # target distance from wall (metres)
+    wall_target_m: 0.30           # overridden by startup calibration
 
     # --- forward speed ---
-    cruise_speed: 0.10            # m/s straight ahead
-    search_speed: 0.07            # m/s when wall is lost
+    cruise_speed: 0.10
+    search_speed: 0.07
     linear_scale: 1.0             # set to -1.0 if motors are wired backwards
 
-    # --- side-wall PD (no integral) ---
-    # error = measured_side - wall_target  (positive = too far, negative = too close)
-    # Increase kp first. Add kd if the robot oscillates side to side.
+    # --- side-wall PD ---
     kp_side: 0.40
     kd_side: 0.80
-    angular_max: 0.35             # rad/s cap on all angular output
+    angular_max: 0.35
 
     # --- front obstacle ---
-    front_stop_m: 0.25            # stop + enter turn mode below this
-    front_slow_m: 0.55            # begin linear speed ramp below this
-    front_half_angle_deg: 40.0    # front sector spans ±this from forward
+    front_stop_m: 0.25
+    front_slow_m: 0.55
+    front_half_angle_deg: 40.0
 
-    # --- corner mode (wall opens up at a corner) ---
-    corner_open_m: 0.15           # wall must open this far past target to trigger
-    corner_turn: 0.18             # angular.z (rad/s) while wrapping the corner
+    # --- corner mode ---
+    corner_open_m: 0.15
+    corner_turn: 0.18
 
-    # --- turn mode (front obstacle) ---
-    turn_angular: 0.20            # angular.z (rad/s) while turning away from wall
-    turn_min_time: 0.30           # minimum seconds spent turning before exiting
-    turn_max_time: 3.0            # give up and enter search mode after this long
+    # --- turn mode ---
+    turn_angular: 0.20
+    turn_min_time: 0.30
+    turn_max_time: 3.0
+
+    # --- exploration mode (wall lost, explorer has a goal) ---
+    explore_speed: 0.08           # forward speed toward frontier goal
+    explore_turn_speed: 0.25      # turning speed toward goal heading
+    explore_angle_tol: 0.20       # radians — stop turning within this (~11 degrees)
+    explore_goal_dist: 0.40       # metres — consider goal reached within this
+
+    # --- recovery mode (triggered when stuck in explore too long) ---
+    explore_stuck_sec: 6.0        # seconds in explore mode before recovery triggers
+    recovery_backup_sec: 0.8      # seconds to reverse
+    recovery_turn_sec: 1.2        # seconds to turn after reversing
+    recovery_backup_speed: -0.07  # m/s backward
+    recovery_turn_speed: 0.25     # rad/s during recovery turn
 
     # --- LiDAR geometry ---
-    # All angles in robot frame: 0°=forward, 90°=left, -90°=right.
-    # angle_offset_deg: rotate raw scan into robot frame.
-    #   0.0   = LiDAR 0° faces forward (normal)
-    #   180.0 = LiDAR 0° faces backward
-    angle_offset_deg: 180.0
-
-    # Side sector: perpendicular to robot, ±inner to ±outer from forward.
-    # Mirrored automatically for right-wall following.
+    angle_offset_deg: 180.0       # RPLidar A1 on X3 faces backward — do not change
     side_inner_deg: 60.0
     side_outer_deg: 120.0
-
-    # Diagonal sector: used to detect the next wall during a corner wrap.
     diag_inner_deg: 30.0
     diag_outer_deg: 65.0
 
     # --- timing ---
     control_period_sec: 0.05      # 20 Hz control loop
-    diag_interval_sec: 3.0        # seconds between DIAG log lines
+    diag_interval_sec: 3.0
