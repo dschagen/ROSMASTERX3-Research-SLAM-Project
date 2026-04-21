@@ -18,4 +18,8 @@ slam_toolbox:
     transform_publish_period: 0.05
     map_update_interval: 3.0
 
+    loop_search_maximum_distance: 3.0
+    loop_match_minimum_response_fine: 0.45
+    loop_match_minimum_response_coarse: 0.35
+
     publish_tf: true

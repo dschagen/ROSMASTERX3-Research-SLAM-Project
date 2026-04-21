@@ -25,8 +25,8 @@ hallway_follower:
     corner_turn: 0.12
 
     # --- turn mode ---
-    turn_angular: 0.12
-    turn_min_time: 0.30
+    turn_angular: 0.08
+    turn_min_time: 0.50
     turn_max_time: 3.0
 
     # --- exploration mode (wall lost, explorer has a goal) ---
