@@ -42,6 +42,9 @@ class WallFollower(Node):
         self.declare_parameter('turn_min_time', 0.50)
         self.declare_parameter('turn_max_time', 2.0)
 
+        # --- settle mode ---
+        self.declare_parameter('settle_duration_sec', 1.5)
+
         # --- exploration mode ---
         self.declare_parameter('explore_speed', 0.08)
         self.declare_parameter('explore_turn_speed', 0.25)
@@ -94,6 +97,8 @@ class WallFollower(Node):
         self._turn_ang = float(self.get_parameter('turn_angular').value)
         self._turn_min_t = float(self.get_parameter('turn_min_time').value)
         self._turn_max_t = float(self.get_parameter('turn_max_time').value)
+
+        self._settle_duration = float(self.get_parameter('settle_duration_sec').value)
 
         self._explore_spd = float(self.get_parameter('explore_speed').value)
         self._explore_turn_spd = float(self.get_parameter('explore_turn_speed').value)
@@ -289,7 +294,8 @@ class WallFollower(Node):
             if front_blocked:
                 self._switch('turn', now)
             else:
-                diag_close = not math.isnan(diag) and diag <= self._wall_target + self._corner_open
+                diag_close = (not math.isnan(diag) and
+                              diag <= self._wall_target + self._corner_open)
                 side_back = wall_seen and side <= self._wall_target + self._corner_open
                 if diag_close or side_back:
                     self._switch('follow', now)
@@ -298,7 +304,14 @@ class WallFollower(Node):
             if elapsed >= self._turn_max_t:
                 self._switch('search', now)
             elif elapsed >= self._turn_min_t and front_clear:
-                self._switch('follow', now)
+                self._switch('settle', now)
+
+        elif self._mode == 'settle':
+            if elapsed >= self._settle_duration:
+                if wall_seen:
+                    self._switch('follow', now)
+                else:
+                    self._switch('search', now)
 
         elif self._mode == 'search':
             if wall_seen:
@@ -330,7 +343,7 @@ class WallFollower(Node):
 
         elif self._mode == 'recovery_turn':
             if elapsed >= self._recovery_turn_sec:
-                self._switch('search', now)
+                self._switch('settle', now)
 
         # ---- compute output ----
         cmd = Twist()
@@ -338,6 +351,11 @@ class WallFollower(Node):
         if self._mode == 'turn':
             cmd.linear.x = 0.0
             cmd.angular.z = float(-self._wall_sign * self._turn_ang)
+
+        elif self._mode == 'settle':
+            # sit completely still — SLAM gets clean scans after rotation
+            cmd.linear.x = 0.0
+            cmd.angular.z = 0.0
 
         elif self._mode == 'corner':
             speed = self._forward_speed(front)
@@ -356,8 +374,10 @@ class WallFollower(Node):
                     # turn toward goal before moving forward
                     cmd.linear.x = 0.0
                     cmd.angular.z = float(
-                        self._clamp(self._explore_turn_spd * math.copysign(1.0, heading_err),
-                                    self._explore_turn_spd)
+                        self._clamp(
+                            self._explore_turn_spd * math.copysign(1.0, heading_err),
+                            self._explore_turn_spd
+                        )
                     )
                 else:
                     # heading good — drive forward

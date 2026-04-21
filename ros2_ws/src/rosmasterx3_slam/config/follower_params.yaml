@@ -28,6 +28,7 @@ hallway_follower:
     turn_angular: 0.08
     turn_min_time: 0.50
     turn_max_time: 2.0
+    settle_duration_sec: 1.5
 
     # --- exploration mode (wall lost, explorer has a goal) ---
     explore_speed: 0.08           # forward speed toward frontier goal
@@ -52,3 +53,4 @@ hallway_follower:
     # --- timing ---
     control_period_sec: 0.05      # 20 Hz control loop
     diag_interval_sec: 3.0
+
