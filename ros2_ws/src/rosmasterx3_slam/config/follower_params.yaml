@@ -11,9 +11,9 @@ hallway_follower:
     linear_scale: 1.0             # set to -1.0 if motors are wired backwards
 
     # --- side-wall PD ---
-    kp_side: 0.40
-    kd_side: 0.80
-    angular_max: 0.35
+    kp_side: 0.20
+    kd_side: 0.40
+    angular_max: 0.20
 
     # --- front obstacle ---
     front_stop_m: 0.25
