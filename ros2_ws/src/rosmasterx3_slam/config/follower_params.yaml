@@ -7,7 +7,7 @@ hallway_follower:
 
     # --- forward speed ---
     cruise_speed: 0.03
-    search_speed: 0.02
+    search_speed: 0.03
     linear_scale: 1.0             # set to -1.0 if motors are wired backwards
 
     # --- side-wall PD ---
@@ -16,18 +16,18 @@ hallway_follower:
     angular_max: 0.20
 
     # --- front obstacle ---
-    front_stop_m: 0.25
-    front_slow_m: 0.55
+    front_stop_m: 0.30
+    front_slow_m: 0.60
     front_half_angle_deg: 40.0
 
     # --- corner mode ---
-    corner_open_m: 0.15
+    corner_open_m: 0.25
     corner_turn: 0.12
 
     # --- turn mode ---
     turn_angular: 0.08
     turn_min_time: 0.50
-    turn_max_time: 3.0
+    turn_max_time: 2.0
 
     # --- exploration mode (wall lost, explorer has a goal) ---
     explore_speed: 0.08           # forward speed toward frontier goal
