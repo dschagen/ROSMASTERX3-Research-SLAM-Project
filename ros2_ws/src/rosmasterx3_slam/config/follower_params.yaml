@@ -25,10 +25,10 @@ hallway_follower:
     corner_turn: 0.12
 
     # --- turn mode ---
-    turn_angular: 0.08
-    turn_min_time: 0.50
-    turn_max_time: 2.0
-    settle_duration_sec: 1.5
+    turn_angular: 0.12
+    turn_min_time: 0.80
+    turn_max_time: 4.0
+    settle_duration_sec: 0.8
 
     # --- exploration mode (wall lost, explorer has a goal) ---
     explore_speed: 0.08           # forward speed toward frontier goal
@@ -38,8 +38,8 @@ hallway_follower:
 
     # --- recovery mode (triggered when stuck in explore too long) ---
     explore_stuck_sec: 6.0        # seconds in explore mode before recovery triggers
-    recovery_backup_sec: 0.8      # seconds to reverse
-    recovery_turn_sec: 1.2        # seconds to turn after reversing
+    recovery_backup_sec: 1.2      # seconds to reverse
+    recovery_turn_sec: 2.0        # seconds to turn after reversing
     recovery_backup_speed: -0.07  # m/s backward
     recovery_turn_speed: 0.25     # rad/s during recovery turn
 
