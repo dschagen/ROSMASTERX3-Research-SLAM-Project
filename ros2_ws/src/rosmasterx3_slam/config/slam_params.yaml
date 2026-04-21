@@ -13,7 +13,7 @@ slam_toolbox:
 
     minimum_time_interval: 0.7
     minimum_travel_distance: 0.08
-    minimum_travel_heading: 0.08
+    minimum_travel_heading: 0.10
 
     transform_publish_period: 0.05
     map_update_interval: 3.0
