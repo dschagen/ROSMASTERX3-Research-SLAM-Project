@@ -36,6 +36,7 @@ class WallFollower(Node):
         # --- corner mode ---
         self.declare_parameter('corner_open_m', 0.25)
         self.declare_parameter('corner_turn', 0.12)
+        self.declare_parameter('corner_min_time_sec', 1.5)
 
         # --- turn mode ---
         self.declare_parameter('turn_angular', 0.08)
@@ -93,6 +94,7 @@ class WallFollower(Node):
 
         self._corner_open = float(self.get_parameter('corner_open_m').value)
         self._corner_turn = float(self.get_parameter('corner_turn').value)
+        self._corner_min_time = float(self.get_parameter('corner_min_time_sec').value)
 
         self._turn_ang = float(self.get_parameter('turn_angular').value)
         self._turn_min_t = float(self.get_parameter('turn_min_time').value)
@@ -143,8 +145,8 @@ class WallFollower(Node):
         self._diag_range = float('nan')
         self._scan_received = False
 
-        # startup calibration
-        self._calibrated = False
+        # startup calibration (disabled — uses wall_target_m from params directly)
+        self._calibrated = True
         self._calib_samples = []
         self._calib_target = 5
 
@@ -293,7 +295,7 @@ class WallFollower(Node):
         elif self._mode == 'corner':
             if front_blocked:
                 self._switch('turn', now)
-            else:
+            elif elapsed >= self._corner_min_time:
                 diag_close = (not math.isnan(diag) and
                               diag <= self._wall_target + self._corner_open)
                 side_back = wall_seen and side <= self._wall_target + self._corner_open

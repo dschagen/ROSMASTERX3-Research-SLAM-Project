@@ -23,6 +23,7 @@ hallway_follower:
     # --- corner mode ---
     corner_open_m: 0.50
     corner_turn: 0.10
+    corner_min_time_sec: 1.5
 
     # --- turn mode ---
     turn_angular: 0.06
