@@ -296,10 +296,7 @@ class WallFollower(Node):
             if front_blocked:
                 self._switch('turn', now)
             elif elapsed >= self._corner_min_time:
-                diag_close = (not math.isnan(diag) and
-                              diag <= self._wall_target + self._corner_open)
-                side_back = wall_seen and side <= self._wall_target + self._corner_open
-                if diag_close or side_back:
+                if wall_seen and side <= self._wall_target + self._corner_open:
                     self._switch('follow', now)
 
         elif self._mode == 'turn':
@@ -362,7 +359,15 @@ class WallFollower(Node):
         elif self._mode == 'corner':
             speed = self._forward_speed(front)
             cmd.linear.x = float(speed * self._linear_scale)
-            cmd.angular.z = float(self._wall_sign * self._corner_turn)
+            if not math.isnan(diag):
+                # proportional steering off diagonal — guides robot around the corner
+                err = diag - self._wall_target
+                cmd.angular.z = float(self._clamp(
+                    self._wall_sign * self._kp * err, self._ang_max
+                ))
+            else:
+                # no diagonal reading yet — turn at fixed rate toward wall
+                cmd.angular.z = float(self._wall_sign * self._corner_turn)
 
         elif self._mode == 'search':
             cmd.linear.x = float(self._search_spd * self._linear_scale)
