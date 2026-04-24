@@ -145,8 +145,8 @@ class WallFollower(Node):
         self._diag_range = float('nan')
         self._scan_received = False
 
-        # startup calibration (disabled — uses wall_target_m from params directly)
-        self._calibrated = True
+        # startup calibration
+        self._calibrated = False
         self._calib_samples = []
         self._calib_target = 5
 
