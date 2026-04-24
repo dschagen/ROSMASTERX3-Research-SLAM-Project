@@ -400,7 +400,9 @@ class WallFollower(Node):
                         self._explore_turn_spd
                     ))
                 else:
-                    cmd.linear.x = float(self._explore_spd * self._linear_scale)
+                    # ramp down as front wall approaches — same as follow/corner
+                    fwd = min(self._explore_spd, self._forward_speed(front))
+                    cmd.linear.x = float(fwd * self._linear_scale)
                     cmd.angular.z = float(self._clamp(
                         0.3 * heading_err + wall_avoid, self._ang_max
                     ))
