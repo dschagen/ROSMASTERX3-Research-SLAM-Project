@@ -289,9 +289,6 @@ class WallFollower(Node):
         if self._mode == 'follow':
             if front_blocked:
                 self._switch('turn', now)
-            elif goal_available:
-                # frontier goal available — hand off to goal-driven navigation
-                self._switch('explore', now)
             elif not wall_seen or side > self._wall_target + self._corner_open:
                 self._switch('corner', now)
 

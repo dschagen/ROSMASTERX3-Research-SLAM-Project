@@ -27,16 +27,16 @@ hallway_follower:
     corner_timeout_sec: 8.0
 
     # --- turn mode ---
-    turn_angular: 0.25
+    turn_angular: 0.10
     turn_min_time: 0.80
-    turn_max_time: 10.0
+    turn_max_time: 20.0
 
     # --- settle mode ---
     settle_duration_sec: 2.5
 
     # --- exploration mode ---
     explore_speed: 0.06
-    explore_turn_speed: 0.20
+    explore_turn_speed: 0.10
     explore_angle_tol: 0.20
     explore_goal_dist: 0.40
     explore_stuck_sec: 8.0
