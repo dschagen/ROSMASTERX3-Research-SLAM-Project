@@ -289,12 +289,17 @@ class WallFollower(Node):
         if self._mode == 'follow':
             if front_blocked:
                 self._switch('turn', now)
+            elif goal_available:
+                # frontier goal available — hand off to goal-driven navigation
+                self._switch('explore', now)
             elif not wall_seen or side > self._wall_target + self._corner_open:
                 self._switch('corner', now)
 
         elif self._mode == 'corner':
             if front_blocked:
                 self._switch('turn', now)
+            elif goal_available:
+                self._switch('explore', now)
             elif elapsed >= self._corner_timeout:
                 self._switch('search', now)
             elif elapsed >= self._corner_min_time:
@@ -309,28 +314,30 @@ class WallFollower(Node):
 
         elif self._mode == 'settle':
             if elapsed >= self._settle_duration:
-                if wall_seen:
+                if goal_available:
+                    self._switch('explore', now)
+                elif wall_seen:
                     self._switch('follow', now)
                 else:
                     self._switch('search', now)
 
         elif self._mode == 'search':
-            if wall_seen:
-                self._switch('follow', now)
-            elif front_blocked:
+            if front_blocked:
                 self._switch('turn', now)
             elif goal_available:
                 self._switch('explore', now)
+            elif wall_seen:
+                self._switch('follow', now)
 
         elif self._mode == 'explore':
-            if wall_seen:
-                self._switch('follow', now)
-            elif front_blocked:
+            if front_blocked:
                 self._switch('turn', now)
+            elif not goal_available:
+                self._switch('search', now)
             elif elapsed > self._explore_stuck_sec:
                 self.get_logger().warn('Explore stuck — entering recovery')
                 self._switch('recovery_backup', now)
-            elif goal_available:
+            else:
                 goal_dist = math.hypot(self._goal_dx, self._goal_dy)
                 if goal_dist < self._explore_goal_dist:
                     self.get_logger().info(
@@ -379,21 +386,25 @@ class WallFollower(Node):
             if goal_available:
                 heading_to_goal = math.atan2(self._goal_dy, self._goal_dx)
                 heading_err = self._norm_angle(heading_to_goal - self._goal_yaw)
+
+                # Reactive wall avoidance: if either wall is closer than target,
+                # blend a correction away from it into the goal heading
+                wall_avoid = 0.0
+                if wall_seen and side < self._wall_target:
+                    wall_avoid = -self._wall_sign * self._kp * (self._wall_target - side) * 2.0
+
                 if abs(heading_err) > self._explore_angle_tol:
-                    # turn toward goal before moving forward
                     cmd.linear.x = 0.0
-                    cmd.angular.z = float(
-                        self._clamp(
-                            self._explore_turn_spd * math.copysign(1.0, heading_err),
-                            self._explore_turn_spd
-                        )
-                    )
+                    cmd.angular.z = float(self._clamp(
+                        self._explore_turn_spd * math.copysign(1.0, heading_err) + wall_avoid,
+                        self._explore_turn_spd
+                    ))
                 else:
-                    # heading good — drive forward
                     cmd.linear.x = float(self._explore_spd * self._linear_scale)
-                    cmd.angular.z = float(self._clamp(0.3 * heading_err, self._ang_max))
+                    cmd.angular.z = float(self._clamp(
+                        0.3 * heading_err + wall_avoid, self._ang_max
+                    ))
             else:
-                # lost goal mid-explore — gentle forward
                 cmd.linear.x = float(self._search_spd * self._linear_scale)
                 cmd.angular.z = 0.0
 
