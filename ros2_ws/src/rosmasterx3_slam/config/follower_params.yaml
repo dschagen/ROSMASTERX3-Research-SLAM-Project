@@ -3,7 +3,7 @@ hallway_follower:
 
     # --- wall selection ---
     wall_side: "left"
-    wall_target_m: 0.30
+    wall_target_m: 0.40
 
     # --- forward speed ---
     cruise_speed: 0.03
@@ -21,7 +21,7 @@ hallway_follower:
     front_half_angle_deg: 35.0
 
     # --- corner mode ---
-    corner_open_m: 0.25
+    corner_open_m: 0.50
     corner_turn: 0.10
 
     # --- turn mode ---
