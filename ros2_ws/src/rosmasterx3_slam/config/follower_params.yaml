@@ -24,6 +24,7 @@ hallway_follower:
     corner_open_m: 0.50
     corner_turn: 0.15
     corner_min_time_sec: 1.5
+    corner_timeout_sec: 8.0
 
     # --- turn mode ---
     turn_angular: 0.06

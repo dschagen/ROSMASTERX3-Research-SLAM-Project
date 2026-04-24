@@ -37,6 +37,7 @@ class WallFollower(Node):
         self.declare_parameter('corner_open_m', 0.25)
         self.declare_parameter('corner_turn', 0.12)
         self.declare_parameter('corner_min_time_sec', 1.5)
+        self.declare_parameter('corner_timeout_sec', 8.0)
 
         # --- turn mode ---
         self.declare_parameter('turn_angular', 0.08)
@@ -95,6 +96,7 @@ class WallFollower(Node):
         self._corner_open = float(self.get_parameter('corner_open_m').value)
         self._corner_turn = float(self.get_parameter('corner_turn').value)
         self._corner_min_time = float(self.get_parameter('corner_min_time_sec').value)
+        self._corner_timeout = float(self.get_parameter('corner_timeout_sec').value)
 
         self._turn_ang = float(self.get_parameter('turn_angular').value)
         self._turn_min_t = float(self.get_parameter('turn_min_time').value)
@@ -287,14 +289,14 @@ class WallFollower(Node):
         if self._mode == 'follow':
             if front_blocked:
                 self._switch('turn', now)
-            elif wall_seen and side > self._wall_target + self._corner_open:
+            elif not wall_seen or side > self._wall_target + self._corner_open:
                 self._switch('corner', now)
-            elif not wall_seen:
-                self._switch('search', now)
 
         elif self._mode == 'corner':
             if front_blocked:
                 self._switch('turn', now)
+            elif elapsed >= self._corner_timeout:
+                self._switch('search', now)
             elif elapsed >= self._corner_min_time:
                 if wall_seen and side <= self._wall_target + self._corner_open:
                     self._switch('follow', now)
