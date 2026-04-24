@@ -46,7 +46,7 @@ hallway_follower:
     recovery_turn_speed: 0.20
 
     # --- LiDAR geometry ---
-    angle_offset_deg: 180.0
+    angle_offset_deg: 0.0
     side_inner_deg: 60.0
     side_outer_deg: 120.0
     diag_inner_deg: 30.0
