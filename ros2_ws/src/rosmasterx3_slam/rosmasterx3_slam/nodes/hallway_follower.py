@@ -59,7 +59,7 @@ class WallFollower(Node):
         self.declare_parameter('recovery_turn_speed', 0.25)
 
         # --- LiDAR geometry ---
-        self.declare_parameter('angle_offset_deg', 180)
+        self.declare_parameter('angle_offset_deg', 0)
         self.declare_parameter('side_inner_deg', 60.0)
         self.declare_parameter('side_outer_deg', 120.0)
         self.declare_parameter('diag_inner_deg', 30.0)

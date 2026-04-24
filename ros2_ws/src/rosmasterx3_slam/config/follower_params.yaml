@@ -2,7 +2,7 @@ hallway_follower:
   ros__parameters:
 
     # --- wall selection ---
-    wall_side: "right"
+    wall_side: "left"
     wall_target_m: 0.30
 
     # --- forward speed ---
