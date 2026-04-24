@@ -22,5 +22,4 @@ slam_toolbox:
     loop_search_maximum_distance: 2.0
     loop_match_minimum_response_fine: 0.55
     loop_match_minimum_response_coarse: 0.45
-    do_loop_closing: false
     publish_tf: true
