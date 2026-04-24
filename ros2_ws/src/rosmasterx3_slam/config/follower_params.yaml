@@ -8,7 +8,7 @@ hallway_follower:
     # --- forward speed ---
     cruise_speed: 0.03
     search_speed: 0.02
-    linear_scale: -1.0
+    linear_scale: 1.0
 
     # --- side-wall PD ---
     kp_side: 0.20
