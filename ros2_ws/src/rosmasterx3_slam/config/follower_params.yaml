@@ -11,8 +11,8 @@ hallway_follower:
     linear_scale: 1.0
 
     # --- side-wall PD ---
-    kp_side: 0.20
-    kd_side: 0.40
+    kp_side: 0.15
+    kd_side: 0.10
     angular_max: 0.20
 
     # --- front obstacle ---
@@ -46,7 +46,7 @@ hallway_follower:
     recovery_turn_speed: 0.20
 
     # --- LiDAR geometry ---
-    angle_offset_deg: 0.0
+    angle_offset_deg: 180.0
     side_inner_deg: 60.0
     side_outer_deg: 120.0
     diag_inner_deg: 30.0

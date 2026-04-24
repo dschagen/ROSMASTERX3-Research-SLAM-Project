@@ -32,7 +32,7 @@ def generate_launch_description():
             package='tf2_ros',
             executable='static_transform_publisher',
             name='laser_static_tf_pub',
-            arguments=['0.10', '0.0', '0.12', '0', '0', '0', 'base_link', 'laser'],
+            arguments=['0.10', '0.0', '0.12', '3.14159', '0', '0', 'base_link', 'laser'],
             output='screen'
         ),
     ])
