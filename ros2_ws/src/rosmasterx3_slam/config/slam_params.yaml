@@ -1,6 +1,6 @@
 slam_toolbox:
   ros__parameters:
-    do_loop_closing: false
+    do_loop_closing: true
     use_sim_time: false
     mode: mapping
 

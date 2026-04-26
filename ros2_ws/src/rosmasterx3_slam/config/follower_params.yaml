@@ -47,9 +47,25 @@ hallway_follower:
     diag_inner_deg: 30.0
     diag_outer_deg: 65.0
 
+    # --- settle mode (robot sits still after a turn so SLAM gets clean scans) ---
+    settle_duration_sec: 2.0
+
+    # --- exploration mode (active only when frontier_explorer publishes a goal) ---
+    explore_speed: 0.08
+    explore_turn_speed: 0.25
+    explore_angle_tol: 0.20
+    explore_goal_dist: 0.40
+    explore_stuck_sec: 6.0
+
+    # --- recovery mode (triggered when explore is stuck) ---
+    recovery_backup_sec: 0.8
+    recovery_turn_sec: 1.2
+    recovery_backup_speed: -0.07
+    recovery_turn_speed: 0.25
+
     # --- timing ---
     control_period_sec: 0.05
     diag_interval_sec: 3.0        # seconds between DIAG log lines
 
     # --- startup ---
-    prescan_count: 20
+    prescan_count: 20             # scans to collect before moving
