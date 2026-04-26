@@ -373,8 +373,9 @@ class WallFollower(Node):
             cmd.angular.z = 0.0
 
         elif self._mode == 'corner':
-            speed = self._forward_speed(front)
-            cmd.linear.x = float(speed * self._linear_scale)
+            # Use search_speed (not cruise) so the turn dominates — prevents diagonal crab walk.
+            # Arc radius = linear / angular = search_spd / corner_turn (keep this tight).
+            cmd.linear.x = float(self._search_spd * self._linear_scale)
             cmd.angular.z = float(self._wall_sign * self._corner_turn)
 
         elif self._mode == 'search':

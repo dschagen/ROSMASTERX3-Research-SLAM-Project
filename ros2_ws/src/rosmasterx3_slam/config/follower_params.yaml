@@ -6,8 +6,8 @@ hallway_follower:
     wall_target_m: 0.30           # target distance from wall (metres)
 
     # --- forward speed ---
-    cruise_speed: 0.10            # m/s straight ahead
-    search_speed: 0.07            # m/s when wall is lost
+    cruise_speed: 0.05            # m/s straight ahead
+    search_speed: 0.03            # m/s when wall is lost
     linear_scale: 1.0             # set to -1.0 if motors are wired backwards
 
     # --- side-wall PD (no integral) ---
