@@ -6,7 +6,7 @@ import time
 import rclpy
 from rclpy.node import Node
 
-from geometry_msgs.msg import Twist, Point
+from geometry_msgs.msg import Twist
 from sensor_msgs.msg import LaserScan
 
 
@@ -15,57 +15,41 @@ class WallFollower(Node):
         super().__init__('hallway_follower')
 
         # --- wall selection ---
-        self.declare_parameter('wall_side', 'left')
-        self.declare_parameter('wall_target_m', 0.30)
+        self.declare_parameter('wall_side', 'left')       # 'left' or 'right'
+        self.declare_parameter('wall_target_m', 0.30)     # target distance from wall (m)
 
         # --- forward speed ---
-        self.declare_parameter('cruise_speed', 0.03)
-        self.declare_parameter('search_speed', 0.02)
-        self.declare_parameter('linear_scale', 1.0)
+        self.declare_parameter('cruise_speed', 0.10)      # m/s straight ahead
+        self.declare_parameter('search_speed', 0.07)      # m/s when wall is lost
+        self.declare_parameter('linear_scale', 1.0)       # -1.0 if motors are wired backwards
 
         # --- side-wall PD (no integral) ---
-        self.declare_parameter('kp_side', 0.20)
-        self.declare_parameter('kd_side', 0.40)
-        self.declare_parameter('angular_max', 0.20)
+        self.declare_parameter('kp_side', 0.40)
+        self.declare_parameter('kd_side', 0.80)
+        self.declare_parameter('angular_max', 0.35)       # rad/s cap
 
         # --- front obstacle ---
-        self.declare_parameter('front_stop_m', 0.30)
-        self.declare_parameter('front_slow_m', 0.60)
+        self.declare_parameter('front_stop_m', 0.25)      # stop + turn below this
+        self.declare_parameter('front_slow_m', 0.55)      # begin slowing below this
         self.declare_parameter('front_half_angle_deg', 40.0)
 
-        # --- corner mode ---
-        self.declare_parameter('corner_open_m', 0.25)
-        self.declare_parameter('corner_turn', 0.12)
-        self.declare_parameter('corner_min_time_sec', 1.5)
-        self.declare_parameter('corner_timeout_sec', 8.0)
+        # --- corner mode (wall suddenly opens up) ---
+        self.declare_parameter('corner_open_m', 0.15)     # wall must open this far past target
+        self.declare_parameter('corner_turn', 0.18)       # angular.z while wrapping corner
 
-        # --- turn mode ---
-        self.declare_parameter('turn_angular', 0.08)
-        self.declare_parameter('turn_min_time', 0.50)
-        self.declare_parameter('turn_max_time', 2.0)
-
-        # --- settle mode ---
-        self.declare_parameter('settle_duration_sec', 1.5)
-
-        # --- exploration mode ---
-        self.declare_parameter('explore_speed', 0.08)
-        self.declare_parameter('explore_turn_speed', 0.25)
-        self.declare_parameter('explore_angle_tol', 0.20)
-        self.declare_parameter('explore_goal_dist', 0.40)
-        self.declare_parameter('explore_stuck_sec', 6.0)
-
-        # --- recovery mode ---
-        self.declare_parameter('recovery_backup_sec', 0.8)
-        self.declare_parameter('recovery_turn_sec', 1.2)
-        self.declare_parameter('recovery_backup_speed', -0.07)
-        self.declare_parameter('recovery_turn_speed', 0.25)
+        # --- turn mode (front obstacle) ---
+        self.declare_parameter('turn_angular', 0.20)      # angular.z while turning away
+        self.declare_parameter('turn_min_time', 0.30)     # minimum seconds in turn mode
+        self.declare_parameter('turn_max_time', 3.0)      # force exit to search after this long
 
         # --- LiDAR geometry ---
-        self.declare_parameter('angle_offset_deg', 0)
-        self.declare_parameter('side_inner_deg', 60.0)
-        self.declare_parameter('side_outer_deg', 120.0)
-        self.declare_parameter('diag_inner_deg', 30.0)
-        self.declare_parameter('diag_outer_deg', 65.0)
+        # All angles are in robot frame: 0=forward, 90=left, -90=right.
+        # Set angle_offset_deg=180 if LiDAR 0° faces robot's physical back.
+        self.declare_parameter('angle_offset_deg', 180)
+        self.declare_parameter('side_inner_deg', 60.0)    # side sector: inner angle from forward
+        self.declare_parameter('side_outer_deg', 120.0)   # side sector: outer angle from forward
+        self.declare_parameter('diag_inner_deg', 30.0)    # diagonal (corner detection): inner
+        self.declare_parameter('diag_outer_deg', 65.0)    # diagonal: outer
 
         # --- misc ---
         self.declare_parameter('control_period_sec', 0.05)
@@ -102,19 +86,6 @@ class WallFollower(Node):
         self._turn_min_t = float(self.get_parameter('turn_min_time').value)
         self._turn_max_t = float(self.get_parameter('turn_max_time').value)
 
-        self._settle_duration = float(self.get_parameter('settle_duration_sec').value)
-
-        self._explore_spd = float(self.get_parameter('explore_speed').value)
-        self._explore_turn_spd = float(self.get_parameter('explore_turn_speed').value)
-        self._explore_angle_tol = float(self.get_parameter('explore_angle_tol').value)
-        self._explore_goal_dist = float(self.get_parameter('explore_goal_dist').value)
-        self._explore_stuck_sec = float(self.get_parameter('explore_stuck_sec').value)
-
-        self._recovery_backup_sec = float(self.get_parameter('recovery_backup_sec').value)
-        self._recovery_turn_sec = float(self.get_parameter('recovery_turn_sec').value)
-        self._recovery_backup_spd = float(self.get_parameter('recovery_backup_speed').value)
-        self._recovery_turn_spd = float(self.get_parameter('recovery_turn_speed').value)
-
         self._angle_offset = math.radians(self.get_parameter('angle_offset_deg').value)
 
         si = math.radians(self.get_parameter('side_inner_deg').value)
@@ -122,6 +93,7 @@ class WallFollower(Node):
         di = math.radians(self.get_parameter('diag_inner_deg').value)
         do_ = math.radians(self.get_parameter('diag_outer_deg').value)
 
+        # mirror sectors for right-wall following (negative angles)
         s = self._wall_sign
         self._side_lo = min(s * si, s * so)
         self._side_hi = max(s * si, s * so)
@@ -132,35 +104,24 @@ class WallFollower(Node):
         self._diag_interval = float(self.get_parameter('diag_interval_sec').value)
         self._prescan_target = int(self.get_parameter('prescan_count').value)
 
-        # subscriptions
         self.create_subscription(LaserScan, '/scan', self.scan_callback, 10)
-        self.create_subscription(Point, '/exploration_goal', self._goal_callback, 10)
         self.cmd_pub = self.create_publisher(Twist, '/cmd_vel_safe', 10)
-
-        # prescan state
-        self._prescan_done = False
-        self._scan_count = 0
 
         # sensor state
         self._front_range = float('nan')
         self._side_range = float('nan')
         self._diag_range = float('nan')
         self._scan_received = False
-
+        
         # startup calibration
         self._calibrated = False
         self._calib_samples = []
-        self._calib_target = 5
-
-        # frontier goal state
-        self._goal_dx = None
-        self._goal_dy = None
-        self._goal_yaw = None
+        self._calib_target = 5 
 
         # controller state
         self._prev_err = 0.0
         self._prev_time = None
-        self._mode = 'follow'
+        self._mode = 'follow'      # follow | corner | turn | search
         self._mode_start = None
         self._last_diag_time = 0.0
 
@@ -180,23 +141,6 @@ class WallFollower(Node):
         self._side_range = self._sector_min(msg, self._side_lo, self._side_hi, off)
         self._diag_range = self._sector_min(msg, self._diag_lo, self._diag_hi, off)
         self._scan_received = True
-
-        if not self._prescan_done:
-            self._scan_count += 1
-            if self._scan_count % 5 == 0:
-                self.get_logger().info(
-                    f'Pre-scan: {self._scan_count}/{self._prescan_target} scans collected...'
-                )
-            if self._scan_count >= self._prescan_target:
-                self._prescan_done = True
-                self.get_logger().info(
-                    f'Pre-scan complete ({self._scan_count} scans) — starting calibration'
-                )
-
-    def _goal_callback(self, msg: Point) -> None:
-        self._goal_dx = msg.x
-        self._goal_dy = msg.y
-        self._goal_yaw = msg.z
 
     @staticmethod
     def _sector_min(scan: LaserScan, ang_lo: float, ang_hi: float,
@@ -236,23 +180,13 @@ class WallFollower(Node):
     def _clamp(v: float, limit: float) -> float:
         return max(-limit, min(limit, v))
 
-    @staticmethod
-    def _norm_angle(a: float) -> float:
-        """Normalise angle to [-pi, pi]."""
-        return (a + math.pi) % (2.0 * math.pi) - math.pi
-
     # -------------------------------------------------------------- control --
 
     def publish_command(self) -> None:
         if not self._scan_received:
             return
 
-        # phase 1 — prescan: sit still
-        if not self._prescan_done:
-            self.cmd_pub.publish(Twist())
-            return
-
-        # phase 2 — calibration: sit still
+        # startup calibration — sample the wall distance and store it
         if not self._calibrated:
             if not math.isnan(self._side_range):
                 self._calib_samples.append(self._side_range)
@@ -267,9 +201,10 @@ class WallFollower(Node):
                     f'Wall target calibrated to {self._wall_target:.3f}m — starting navigation'
                 )
             else:
+                # sit still and publish zero while calibrating
                 self.cmd_pub.publish(Twist())
                 return
-
+    
         now = time.monotonic()
         dt = 0.05 if self._prev_time is None else max(1e-3, now - self._prev_time)
         self._prev_time = now
@@ -281,9 +216,6 @@ class WallFollower(Node):
         wall_seen = not math.isnan(side)
         front_blocked = not math.isnan(front) and front <= self._front_stop
         front_clear = not front_blocked
-        goal_available = self._goal_dx is not None and self._goal_yaw is not None
-
-        elapsed = now - (self._mode_start or now)
 
         # ---- mode transitions ----
         if self._mode == 'follow':
@@ -291,69 +223,34 @@ class WallFollower(Node):
                 self._switch('turn', now)
             elif not wall_seen or side > self._wall_target + self._corner_open:
                 self._switch('corner', now)
+            elif not wall_seen:
+                self._switch('search', now)
 
         elif self._mode == 'corner':
             if front_blocked:
                 self._switch('turn', now)
-            elif goal_available:
-                self._switch('explore', now)
-            elif elapsed >= self._corner_timeout:
-                self._switch('search', now)
-            elif elapsed >= self._corner_min_time:
-                if wall_seen and side <= self._wall_target + self._corner_open:
+            else:
+                diag_close = not math.isnan(diag) and diag <= self._wall_target + self._corner_open
+                side_back = wall_seen and side <= self._wall_target + self._corner_open
+                if diag_close or side_back:
                     self._switch('follow', now)
 
         elif self._mode == 'turn':
             if elapsed >= self._turn_max_t:
+                # stuck spinning — drop into search so the robot at least moves
                 self._switch('search', now)
             elif elapsed >= self._turn_min_t and front_clear:
-                self._switch('settle', now)
-
-        elif self._mode == 'settle':
-            if elapsed >= self._settle_duration:
-                if goal_available:
-                    self._switch('explore', now)
-                elif wall_seen:
-                    self._switch('follow', now)
-                else:
-                    self._switch('search', now)
+                self._switch('follow', now)
 
         elif self._mode == 'search':
             if front_blocked:
                 self._switch('turn', now)
-            elif goal_available:
-                self._switch('explore', now)
-            elif wall_seen:
-                self._switch('follow', now)
-
-        elif self._mode == 'explore':
-            if front_blocked:
-                self._switch('turn', now)
-            elif not goal_available:
-                self._switch('search', now)
-            elif elapsed > self._explore_stuck_sec:
-                self.get_logger().warn('Explore stuck — entering recovery')
-                self._switch('recovery_backup', now)
-            else:
-                goal_dist = math.hypot(self._goal_dx, self._goal_dy)
-                if goal_dist < self._explore_goal_dist:
-                    self.get_logger().info(
-                        f'Frontier goal reached ({goal_dist:.2f}m) — returning to search'
-                    )
-                    self._switch('search', now)
-
-        elif self._mode == 'recovery_backup':
-            if elapsed >= self._recovery_backup_sec:
-                self._switch('recovery_turn', now)
-
-        elif self._mode == 'recovery_turn':
-            if elapsed >= self._recovery_turn_sec:
-                self._switch('settle', now)
 
         # ---- compute output ----
         cmd = Twist()
 
         if self._mode == 'turn':
+            # spin in place away from the wall side
             cmd.linear.x = 0.0
             cmd.angular.z = float(-self._wall_sign * self._turn_ang)
 
@@ -363,57 +260,15 @@ class WallFollower(Node):
             cmd.angular.z = 0.0
 
         elif self._mode == 'corner':
+            # move forward while curving toward the wall
             speed = self._forward_speed(front)
             cmd.linear.x = float(speed * self._linear_scale)
-            if not math.isnan(diag):
-                # proportional steering off diagonal — guides robot around the corner
-                err = diag - self._wall_target
-                cmd.angular.z = float(self._clamp(
-                    self._wall_sign * self._kp * err, self._ang_max
-                ))
-            else:
-                # no diagonal reading yet — turn at fixed rate toward wall
-                cmd.angular.z = float(self._wall_sign * self._corner_turn)
+            cmd.angular.z = float(self._wall_sign * self._corner_turn)
 
         elif self._mode == 'search':
+            # slow forward + gentle turn toward wall side
             cmd.linear.x = float(self._search_spd * self._linear_scale)
             cmd.angular.z = float(self._wall_sign * self._corner_turn * 0.5)
-
-        elif self._mode == 'explore':
-            if goal_available:
-                heading_to_goal = math.atan2(self._goal_dy, self._goal_dx)
-                heading_err = self._norm_angle(heading_to_goal - self._goal_yaw)
-
-                # Reactive wall avoidance: if either wall is closer than target,
-                # blend a correction away from it into the goal heading
-                wall_avoid = 0.0
-                if wall_seen and side < self._wall_target:
-                    wall_avoid = -self._wall_sign * self._kp * (self._wall_target - side) * 2.0
-
-                if abs(heading_err) > self._explore_angle_tol:
-                    cmd.linear.x = 0.0
-                    cmd.angular.z = float(self._clamp(
-                        self._explore_turn_spd * math.copysign(1.0, heading_err) + wall_avoid,
-                        self._explore_turn_spd
-                    ))
-                else:
-                    # ramp down as front wall approaches — same as follow/corner
-                    fwd = min(self._explore_spd, self._forward_speed(front))
-                    cmd.linear.x = float(fwd * self._linear_scale)
-                    cmd.angular.z = float(self._clamp(
-                        0.3 * heading_err + wall_avoid, self._ang_max
-                    ))
-            else:
-                cmd.linear.x = float(self._search_spd * self._linear_scale)
-                cmd.angular.z = 0.0
-
-        elif self._mode == 'recovery_backup':
-            cmd.linear.x = float(self._recovery_backup_spd)
-            cmd.angular.z = 0.0
-
-        elif self._mode == 'recovery_turn':
-            cmd.linear.x = 0.0
-            cmd.angular.z = float(-self._wall_sign * self._recovery_turn_spd)
 
         else:  # follow
             speed = self._forward_speed(front)
@@ -432,7 +287,6 @@ class WallFollower(Node):
         self.cmd_pub.publish(cmd)
 
     def _switch(self, mode: str, now: float) -> None:
-        self.get_logger().info(f'Mode: {self._mode} → {mode}')
         self._mode = mode
         self._mode_start = now
         self._prev_err = 0.0
@@ -444,11 +298,9 @@ class WallFollower(Node):
             return
         self._last_diag_time = now
         fmt = lambda v: f'{v:.2f}' if not math.isnan(v) else 'nan'
-        goal_str = (f'goal=({self._goal_dx:.2f},{self._goal_dy:.2f})'
-                    if self._goal_dx is not None else 'goal=none')
         self.get_logger().info(
-            f'DIAG | mode={self._mode:16s} front={fmt(front)} '
-            f'side={fmt(side)} diag={fmt(diag)} {goal_str}'
+            f'DIAG | mode={self._mode:6s} front={fmt(front)} '
+            f'side={fmt(side)} diag={fmt(diag)}'
         )
 
 

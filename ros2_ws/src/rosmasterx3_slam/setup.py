@@ -37,7 +37,6 @@ setup(
             'scan_monitor = rosmasterx3_slam.nodes.scan_monitor:main',
             'hallway_detector = rosmasterx3_slam.nodes.hallway_detector:main',
             'hallway_follower = rosmasterx3_slam.nodes.hallway_follower:main',
-            'frontier_explorer = rosmasterx3_slam.nodes.frontier_explorer_node:main',
         ],
     },
 )
