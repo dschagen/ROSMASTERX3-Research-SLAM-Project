@@ -42,9 +42,6 @@ class WallFollower(Node):
         self.declare_parameter('turn_min_time', 0.30)
         self.declare_parameter('turn_max_time', 3.0)
 
-        # --- settle mode ---
-        self.declare_parameter('settle_duration_sec', 2.0)
-
         # --- LiDAR geometry ---
         self.declare_parameter('angle_offset_deg', 180)
         self.declare_parameter('side_inner_deg', 60.0)
@@ -57,7 +54,7 @@ class WallFollower(Node):
         self.declare_parameter('diag_interval_sec', 3.0)
 
         # --- startup ---
-        self.declare_parameter('prescan_count', 20)
+        self.declare_parameter('prescan_count', 20)   # scans to collect before moving
 
         # ---- read all params ----
         wall_side_str = self.get_parameter('wall_side').value
@@ -85,8 +82,6 @@ class WallFollower(Node):
         self._turn_min_t = float(self.get_parameter('turn_min_time').value)
         self._turn_max_t = float(self.get_parameter('turn_max_time').value)
 
-        self._settle_duration = float(self.get_parameter('settle_duration_sec').value)
-
         self._angle_offset = math.radians(self.get_parameter('angle_offset_deg').value)
 
         si = math.radians(self.get_parameter('side_inner_deg').value)
@@ -104,7 +99,6 @@ class WallFollower(Node):
         self._diag_interval = float(self.get_parameter('diag_interval_sec').value)
         self._prescan_target = int(self.get_parameter('prescan_count').value)
 
-        # subscriptions / publishers
         self.create_subscription(LaserScan, '/scan', self.scan_callback, 10)
         self.cmd_pub = self.create_publisher(Twist, '/cmd_vel_safe', 10)
 
@@ -147,6 +141,7 @@ class WallFollower(Node):
         self._diag_range = self._sector_min(msg, self._diag_lo, self._diag_hi, off)
         self._scan_received = True
 
+        # count scans for prescan phase
         if not self._prescan_done:
             self._scan_count += 1
             if self._scan_count % 5 == 0:
@@ -155,7 +150,9 @@ class WallFollower(Node):
                 )
             if self._scan_count >= self._prescan_target:
                 self._prescan_done = True
-                self.get_logger().info('Pre-scan complete — starting calibration')
+                self.get_logger().info(
+                    f'Pre-scan complete ({self._scan_count} scans) — starting calibration'
+                )
 
     @staticmethod
     def _sector_min(scan: LaserScan, ang_lo: float, ang_hi: float,
@@ -201,12 +198,12 @@ class WallFollower(Node):
         if not self._scan_received:
             return
 
-        # phase 1 — prescan: sit still, collect LiDAR data
+        # phase 1 — sit still while accumulating clean scans for SLAM anchor
         if not self._prescan_done:
             self.cmd_pub.publish(Twist())
             return
 
-        # phase 2 — calibration: measure wall distance from startup position
+        # phase 2 — wall distance calibration (robot still stationary)
         if not self._calibrated:
             if not math.isnan(self._side_range):
                 self._calib_samples.append(self._side_range)
@@ -235,7 +232,6 @@ class WallFollower(Node):
         wall_seen = not math.isnan(side)
         front_blocked = not math.isnan(front) and front <= self._front_stop
         front_clear = not front_blocked
-        elapsed = now - (self._mode_start if self._mode_start is not None else now)
 
         # ---- mode transitions ----
         if self._mode == 'follow':
@@ -257,6 +253,7 @@ class WallFollower(Node):
                     self._switch('follow', now)
 
         elif self._mode == 'turn':
+            elapsed = now - (self._mode_start or now)
             if elapsed >= self._turn_max_t:
                 self._switch('search', now)
             elif elapsed >= self._turn_min_t and front_clear:
@@ -272,8 +269,6 @@ class WallFollower(Node):
         elif self._mode == 'search':
             if front_blocked:
                 self._switch('turn', now)
-            elif wall_seen:
-                self._switch('follow', now)
 
         # ---- compute output ----
         cmd = Twist()
@@ -312,7 +307,6 @@ class WallFollower(Node):
         self.cmd_pub.publish(cmd)
 
     def _switch(self, mode: str, now: float) -> None:
-        self.get_logger().info(f'Mode: {self._mode} → {mode}')
         self._mode = mode
         self._mode_start = now
         self._prev_err = 0.0
@@ -325,7 +319,7 @@ class WallFollower(Node):
         self._last_diag_time = now
         fmt = lambda v: f'{v:.2f}' if not math.isnan(v) else 'nan'
         self.get_logger().info(
-            f'DIAG | mode={self._mode:8s} front={fmt(front)} '
+            f'DIAG | mode={self._mode:6s} front={fmt(front)} '
             f'side={fmt(side)} diag={fmt(diag)}'
         )
 
