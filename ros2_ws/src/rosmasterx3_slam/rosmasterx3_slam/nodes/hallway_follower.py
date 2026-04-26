@@ -36,6 +36,7 @@ class WallFollower(Node):
         # --- corner mode ---
         self.declare_parameter('corner_open_m', 0.25)
         self.declare_parameter('corner_turn', 0.12)
+        self.declare_parameter('corner_timeout_sec', 4.0)
 
         # --- turn mode ---
         self.declare_parameter('turn_angular', 0.08)
@@ -93,6 +94,7 @@ class WallFollower(Node):
 
         self._corner_open = float(self.get_parameter('corner_open_m').value)
         self._corner_turn = float(self.get_parameter('corner_turn').value)
+        self._corner_timeout = float(self.get_parameter('corner_timeout_sec').value)
 
         self._turn_ang = float(self.get_parameter('turn_angular').value)
         self._turn_min_t = float(self.get_parameter('turn_min_time').value)
@@ -140,6 +142,7 @@ class WallFollower(Node):
         self._front_range = float('nan')
         self._side_range = float('nan')
         self._diag_range = float('nan')
+        self._rear_range = float('nan')
         self._scan_received = False
 
         # startup calibration
@@ -174,6 +177,17 @@ class WallFollower(Node):
         self._front_range = self._sector_min(msg, self._front_lo, self._front_hi, off)
         self._side_range = self._sector_min(msg, self._side_lo, self._side_hi, off)
         self._diag_range = self._sector_min(msg, self._diag_lo, self._diag_hi, off)
+        # Rear sector: ±40° around 180° (two halves that straddle the ±π wrap)
+        rear_l = self._sector_min(msg, math.radians(140.0), math.pi, off)
+        rear_r = self._sector_min(msg, -math.pi, math.radians(-140.0), off)
+        if math.isnan(rear_l) and math.isnan(rear_r):
+            self._rear_range = float('nan')
+        elif math.isnan(rear_l):
+            self._rear_range = rear_r
+        elif math.isnan(rear_r):
+            self._rear_range = rear_l
+        else:
+            self._rear_range = min(rear_l, rear_r)
         self._scan_received = True
 
         if not self._prescan_done:
@@ -278,7 +292,9 @@ class WallFollower(Node):
         front_clear = not front_blocked
         goal_available = self._goal_dx is not None and self._goal_yaw is not None
 
-        elapsed = now - (self._mode_start or now)
+        elapsed = now - (self._mode_start if self._mode_start is not None else now)
+
+        rear_blocked = not math.isnan(self._rear_range) and self._rear_range <= self._front_stop
 
         # ---- mode transitions ----
         if self._mode == 'follow':
@@ -292,6 +308,8 @@ class WallFollower(Node):
         elif self._mode == 'corner':
             if front_blocked:
                 self._switch('turn', now)
+            elif elapsed >= self._corner_timeout:
+                self._switch('search', now)
             else:
                 diag_close = not math.isnan(diag) and diag <= self._wall_target + self._corner_open
                 side_back = wall_seen and side <= self._wall_target + self._corner_open
@@ -302,7 +320,14 @@ class WallFollower(Node):
             if elapsed >= self._turn_max_t:
                 self._switch('search', now)
             elif elapsed >= self._turn_min_t and front_clear:
-                self._switch('follow', now)
+                self._switch('settle', now)
+
+        elif self._mode == 'settle':
+            if elapsed >= self._settle_duration:
+                if wall_seen:
+                    self._switch('follow', now)
+                else:
+                    self._switch('search', now)
 
         elif self._mode == 'search':
             if wall_seen:
@@ -329,7 +354,7 @@ class WallFollower(Node):
                     self._switch('search', now)
 
         elif self._mode == 'recovery_backup':
-            if elapsed >= self._recovery_backup_sec:
+            if rear_blocked or elapsed >= self._recovery_backup_sec:
                 self._switch('recovery_turn', now)
 
         elif self._mode == 'recovery_turn':
@@ -342,6 +367,10 @@ class WallFollower(Node):
         if self._mode == 'turn':
             cmd.linear.x = 0.0
             cmd.angular.z = float(-self._wall_sign * self._turn_ang)
+
+        elif self._mode == 'settle':
+            cmd.linear.x = 0.0
+            cmd.angular.z = 0.0
 
         elif self._mode == 'corner':
             speed = self._forward_speed(front)
