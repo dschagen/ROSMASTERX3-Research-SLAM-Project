@@ -42,6 +42,9 @@ class WallFollower(Node):
         self.declare_parameter('turn_min_time', 0.50)
         self.declare_parameter('turn_max_time', 2.0)
 
+        # --- settle mode ---
+        self.declare_parameter('settle_duration_sec', 2.0)
+
         # --- exploration mode ---
         self.declare_parameter('explore_speed', 0.08)
         self.declare_parameter('explore_turn_speed', 0.25)
@@ -94,6 +97,7 @@ class WallFollower(Node):
         self._turn_ang = float(self.get_parameter('turn_angular').value)
         self._turn_min_t = float(self.get_parameter('turn_min_time').value)
         self._turn_max_t = float(self.get_parameter('turn_max_time').value)
+        self._settle_duration = float(self.get_parameter('settle_duration_sec').value)
 
         self._explore_spd = float(self.get_parameter('explore_speed').value)
         self._explore_turn_spd = float(self.get_parameter('explore_turn_speed').value)
