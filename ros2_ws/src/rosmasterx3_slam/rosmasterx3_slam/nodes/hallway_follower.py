@@ -359,7 +359,7 @@ class WallFollower(Node):
 
         elif self._mode == 'recovery_turn':
             if elapsed >= self._recovery_turn_sec:
-                self._switch('search', now)
+                self._switch('settle', now)
 
         # ---- compute output ----
         cmd = Twist()
