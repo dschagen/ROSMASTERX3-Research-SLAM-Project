@@ -373,9 +373,9 @@ class WallFollower(Node):
             cmd.angular.z = 0.0
 
         elif self._mode == 'corner':
-            # Use search_speed (not cruise) so the turn dominates — prevents diagonal crab walk.
-            # Arc radius = linear / angular = search_spd / corner_turn (keep this tight).
-            cmd.linear.x = float(self._search_spd * self._linear_scale)
+            # Omni wheels with reduced weight slip when linear + angular are combined.
+            # Stop completely and rotate in place until the wall comes back into range.
+            cmd.linear.x = 0.0
             cmd.angular.z = float(self._wall_sign * self._corner_turn)
 
         elif self._mode == 'search':

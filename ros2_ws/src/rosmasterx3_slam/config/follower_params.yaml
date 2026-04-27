@@ -23,8 +23,8 @@ hallway_follower:
 
     # --- corner mode (wall opens up at a corner) ---
     corner_open_m: 0.25           # wall must open this far past target to trigger
-    corner_turn: 0.10             # angular.z (rad/s) while wrapping the corner
-    corner_timeout_sec: 4.0       # give up and enter search if wall not found after this long
+    corner_turn: 0.15             # angular.z (rad/s) — pure rotation in place on omni wheels
+    corner_timeout_sec: 12.0      # 90° at 0.15 rad/s takes ~10.5s — give enough time
 
     # --- turn mode (front obstacle) ---
     turn_angular: 0.06            # angular.z (rad/s) while turning away from wall
