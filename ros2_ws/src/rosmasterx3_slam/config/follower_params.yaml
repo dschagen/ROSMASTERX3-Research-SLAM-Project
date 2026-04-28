@@ -4,20 +4,40 @@ hallway_follower:
     # --- wall selection ---
     wall_side: "left"             # "left" or "right"
     wall_target_m: 0.30           # target distance from wall (metres)
+                                  # overridden at startup by calibration
 
     # --- forward speed ---
     cruise_speed: 0.05            # m/s straight ahead
     search_speed: 0.03            # m/s when wall is lost
     linear_scale: 1.0             # set to -1.0 if motors are wired backwards
 
-    # --- side-wall PD (no integral) ---
+    # --- side-wall PID ---
     # error = measured_side - wall_target  (positive = too far, negative = too close)
-    # Increase kp first. Add kd if the robot oscillates side to side.
+    #
+    # Oscillation fix summary:
+    #   1. Dead-band (error_deadband_m) absorbs LiDAR noise — no steering for tiny errors.
+    #   2. Removed the asymmetric lag filter on error (it created lag that D fought).
+    #   3. D clamp tightened from 10.0 → 2.0 so one noisy scan can't spike the robot.
+    #   4. In straight hallways both walls visible → centering mode replaces PID.
     kp_side: 0.18
-    ki_side: 0.005
-    kd_side: 0.15
-    angular_max: 0.18
-    integral_max: 0.06             # rad/s cap on all angular output
+    ki_side: 0.004                # very small — mainly holds steady-state offset
+    kd_side: 0.20                 # enough to damp overshoots without amplifying noise
+    angular_max: 0.18             # hard cap on angular output (rad/s)
+    integral_max: 0.05            # anti-windup cap
+
+    # --- dead-band ---
+    # Errors smaller than this are treated as zero.
+    # 0.06 m = 6 cm tolerance band — robot won't correct unless it drifts >6 cm
+    # from target. This is the main fix for the oscillation/U-turn bug.
+    error_deadband_m: 0.06
+
+    # --- hallway centering ---
+    # When the opposite wall is also visible, steer to the corridor midpoint
+    # using gentle P-only control instead of single-wall PID.
+    # This keeps the robot driving straight in a hallway.
+    hallway_center_mode: true
+    opposite_side_inner_deg: 60.0  # mirror of side_inner_deg
+    opposite_side_outer_deg: 120.0 # mirror of side_outer_deg
 
     # --- front obstacle ---
     front_stop_m: 0.25            # stop + enter turn mode below this
@@ -27,7 +47,7 @@ hallway_follower:
     # --- corner mode (wall opens up at a corner) ---
     corner_open_m: 0.15           # wall must open this far past target to trigger
     corner_turn: 0.18             # angular.z (rad/s) while wrapping the corner
-    corner_timeout_sec: 2.0       # give up and enter search if wall not found after this long
+    corner_timeout_sec: 2.0       # give up and enter search if wall not found
 
     # --- turn mode (front obstacle) ---
     turn_angular: 0.20            # angular.z (rad/s) while turning away from wall
@@ -35,32 +55,27 @@ hallway_follower:
     turn_max_time: 3.0            # give up and enter search mode after this long
 
     # --- LiDAR geometry ---
-    # All angles in robot frame: 0°=forward, 90°=left, -90°=right.
-    # angle_offset_deg: rotate raw scan into robot frame.
-    #   0.0   = LiDAR 0° faces forward (normal)
-    #   180.0 = LiDAR 0° faces backward
-    angle_offset_deg: 180.0
+    angle_offset_deg: 180.0       # 180 = LiDAR 0° faces backward
 
-    # Side sector: perpendicular to robot, ±inner to ±outer from forward.
-    # Mirrored automatically for right-wall following.
+    # Side sector: perpendicular to robot.
     side_inner_deg: 60.0
     side_outer_deg: 120.0
 
-    # Diagonal sector: used to detect the next wall during a corner wrap.
+    # Diagonal sector: used to detect wall during corner wrap.
     diag_inner_deg: 30.0
     diag_outer_deg: 65.0
 
-    # --- settle mode (robot sits still after a turn so SLAM gets clean scans) ---
+    # --- settle mode ---
     settle_duration_sec: 2.0
 
-    # --- exploration mode (active only when frontier_explorer publishes a goal) ---
+    # --- exploration mode ---
     explore_speed: 0.08
     explore_turn_speed: 0.25
     explore_angle_tol: 0.20
     explore_goal_dist: 0.40
     explore_stuck_sec: 6.0
 
-    # --- recovery mode (triggered when explore is stuck) ---
+    # --- recovery mode ---
     recovery_backup_sec: 0.8
     recovery_turn_sec: 1.2
     recovery_backup_speed: -0.07
@@ -68,7 +83,7 @@ hallway_follower:
 
     # --- timing ---
     control_period_sec: 0.05
-    diag_interval_sec: 3.0        # seconds between DIAG log lines
+    diag_interval_sec: 3.0
 
     # --- startup ---
-    prescan_count: 20             # scans to collect before moving
+    prescan_count: 20

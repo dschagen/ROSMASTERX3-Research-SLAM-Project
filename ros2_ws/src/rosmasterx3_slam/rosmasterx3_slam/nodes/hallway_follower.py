@@ -30,6 +30,15 @@ class WallFollower(Node):
         self.declare_parameter('angular_max', 0.20)
         self.declare_parameter('integral_max', 0.10)
 
+        # --- dead-band: ignore errors smaller than this (m) ---
+        self.declare_parameter('error_deadband_m', 0.06)
+
+        # --- straight hallway detection ---
+        # If opposite wall is within this range, use centering mode instead of PID
+        self.declare_parameter('opposite_side_inner_deg', 60.0)
+        self.declare_parameter('opposite_side_outer_deg', 120.0)
+        self.declare_parameter('hallway_center_mode', True)
+
         # --- front obstacle ---
         self.declare_parameter('front_stop_m', 0.30)
         self.declare_parameter('front_slow_m', 0.60)
@@ -89,6 +98,8 @@ class WallFollower(Node):
         self._kd = float(self.get_parameter('kd_side').value)
         self._ang_max = float(self.get_parameter('angular_max').value)
         self._integral_max = float(self.get_parameter('integral_max').value)
+        self._error_deadband = float(self.get_parameter('error_deadband_m').value)
+        self._hallway_center_mode = bool(self.get_parameter('hallway_center_mode').value)
 
         self._front_stop = float(self.get_parameter('front_stop_m').value)
         self._front_slow = float(self.get_parameter('front_slow_m').value)
@@ -129,6 +140,12 @@ class WallFollower(Node):
         self._diag_lo = min(s * di, s * do_)
         self._diag_hi = max(s * di, s * do_)
 
+        # Opposite-wall sector: mirror of side sector on the other side
+        oi = math.radians(self.get_parameter('opposite_side_inner_deg').value)
+        oo = math.radians(self.get_parameter('opposite_side_outer_deg').value)
+        self._opp_lo = min(-s * oi, -s * oo)
+        self._opp_hi = max(-s * oi, -s * oo)
+
         period = float(self.get_parameter('control_period_sec').value)
         self._diag_interval = float(self.get_parameter('diag_interval_sec').value)
         self._prescan_target = int(self.get_parameter('prescan_count').value)
@@ -147,6 +164,7 @@ class WallFollower(Node):
         self._side_range = float('nan')
         self._diag_range = float('nan')
         self._rear_range = float('nan')
+        self._opp_range = float('nan')   # opposite wall (for hallway centering)
         self._scan_received = False
 
         # startup calibration
@@ -184,6 +202,7 @@ class WallFollower(Node):
         self._front_range = self._sector_min(msg, self._front_lo, self._front_hi, off)
         self._side_range = self._sector_min(msg, self._side_lo, self._side_hi, off)
         self._diag_range = self._sector_min(msg, self._diag_lo, self._diag_hi, off)
+        self._opp_range = self._sector_min(msg, self._opp_lo, self._opp_hi, off)
         # Rear sector: ±40° around 180° (two halves that straddle the ±π wrap)
         rear_l = self._sector_min(msg, math.radians(140.0), math.pi, off)
         rear_r = self._sector_min(msg, -math.pi, math.radians(-140.0), off)
@@ -425,28 +444,63 @@ class WallFollower(Node):
             speed = self._forward_speed(front)
             if wall_seen:
                 raw_err = side - self._wall_target
-                # P: filtered error — slow asymmetric ramp back after obstacle clears;
-                #    immediate response when wall closes in (getting too close).
-                if raw_err > self._filtered_err:
-                    self._filtered_err = 0.10 * raw_err + 0.90 * self._filtered_err
+
+                # --- Hallway centering: both walls visible ---
+                # When the opposite wall is also detected, steer to the corridor
+                # midpoint using P-only control. This keeps the robot driving
+                # straight in a hallway without the oscillation that comes from
+                # chasing a fixed single-wall target with PID.
+                opp = self._opp_range
+                if self._hallway_center_mode and not math.isnan(opp):
+                    hallway_width = side + opp
+                    center_err = side - hallway_width / 2.0
+                    # Gentle P-only; clamp to half angular_max so it barely nudges
+                    angular_z = self._clamp(
+                        self._wall_sign * self._kp * center_err,
+                        self._ang_max * 0.5
+                    )
+                    # Keep PID state clean so there's no wind-up in the background
+                    self._filtered_err = 0.0
+                    self._prev_raw_err = 0.0
+                    self._integral_err = 0.0
+
                 else:
-                    self._filtered_err = raw_err
-                # D: raw error — single spike when obstacle clears, then zero while
-                #    error is stable. Avoids the continuous D amplification that
-                #    occurred when differentiating the filtered signal.
-                self._integral_err = self._clamp(
-                    self._integral_err + self._filtered_err * dt,
-                    self._integral_max
-                )
-                d_term = self._clamp((raw_err - self._prev_raw_err) / dt, 10.0)
-                raw = self._wall_sign * (
-                    self._kp * self._filtered_err
-                    + self._ki * self._integral_err
-                    + self._kd * d_term
-                )
-                angular_z = self._clamp(raw, self._ang_max)
-                self._prev_err = self._filtered_err
-                self._prev_raw_err = raw_err
+                    # --- Single-wall PID with dead-band ---
+                    # Dead-band: suppress corrections for errors smaller than
+                    # error_deadband_m. This stops LiDAR noise (±1-2 cm) from
+                    # driving constant micro-steering that accumulates into a U-turn.
+                    if abs(raw_err) < self._error_deadband:
+                        eff_err = 0.0
+                    else:
+                        # Shift so response starts from dead-band edge, not from zero,
+                        # preventing a step discontinuity when crossing the threshold.
+                        eff_err = raw_err - math.copysign(self._error_deadband, raw_err)
+
+                    # P: proportional to dead-banded error.
+                    # Removed the asymmetric lag filter — that filter created a slow
+                    # ramp that the D term fought continuously, causing oscillation.
+                    self._filtered_err = eff_err
+
+                    # I: integrate dead-banded error; anti-windup clamp applied.
+                    self._integral_err = self._clamp(
+                        self._integral_err + eff_err * dt,
+                        self._integral_max
+                    )
+
+                    # D: differentiate raw (un-dead-banded) error so the derivative
+                    # still reacts to real wall geometry changes, but clamp the spike
+                    # tightly (2.0 m/s²) so a single noisy scan can't flip the robot.
+                    # Previous clamp was 10.0 — that let noise dominate.
+                    d_term = self._clamp((raw_err - self._prev_raw_err) / dt, 2.0)
+
+                    raw = self._wall_sign * (
+                        self._kp * self._filtered_err
+                        + self._ki * self._integral_err
+                        + self._kd * d_term
+                    )
+                    angular_z = self._clamp(raw, self._ang_max)
+                    self._prev_err = self._filtered_err
+                    self._prev_raw_err = raw_err
             else:
                 angular_z = 0.0
             cmd.linear.x = float(speed * self._linear_scale)
@@ -473,9 +527,12 @@ class WallFollower(Node):
         fmt = lambda v: f'{v:.2f}' if not math.isnan(v) else 'nan'
         goal_str = (f'goal=({self._goal_dx:.2f},{self._goal_dy:.2f})'
                     if self._goal_dx is not None else 'goal=none')
+        opp = self._opp_range
+        centering = (self._hallway_center_mode and not math.isnan(opp))
+        ctrl_str = f'center(w={side + opp:.2f})' if centering else 'pid'
         self.get_logger().info(
-            f'DIAG | mode={self._mode:16s} front={fmt(front)} '
-            f'side={fmt(side)} diag={fmt(diag)} {goal_str}'
+            f'DIAG | mode={self._mode:16s} ctrl={ctrl_str:16s} '
+            f'front={fmt(front)} side={fmt(side)} opp={fmt(opp)} diag={fmt(diag)} {goal_str}'
         )
 
 
