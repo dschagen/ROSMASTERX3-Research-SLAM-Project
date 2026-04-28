@@ -46,7 +46,11 @@ class WallFollower(Node):
 
         # --- corner mode ---
         self.declare_parameter('corner_open_m', 0.25)
-        self.declare_parameter('corner_turn', 0.12)
+        self.declare_parameter('corner_turn', 0.12)        # max angular during arc
+        self.declare_parameter('corner_turn_min', 0.06)    # min angular during arc
+        self.declare_parameter('corner_speed', 0.025)      # forward speed during arc
+        self.declare_parameter('corner_diag_target_m', 0.50)  # desired diag reading during arc
+        self.declare_parameter('corner_kp', 0.30)          # proportional gain on diag error
         self.declare_parameter('corner_timeout_sec', 5.0)
 
         # --- turn mode ---
@@ -109,6 +113,10 @@ class WallFollower(Node):
 
         self._corner_open = float(self.get_parameter('corner_open_m').value)
         self._corner_turn = float(self.get_parameter('corner_turn').value)
+        self._corner_turn_min = float(self.get_parameter('corner_turn_min').value)
+        self._corner_speed = float(self.get_parameter('corner_speed').value)
+        self._corner_diag_target = float(self.get_parameter('corner_diag_target_m').value)
+        self._corner_kp = float(self.get_parameter('corner_kp').value)
         self._corner_timeout = float(self.get_parameter('corner_timeout_sec').value)
 
         self._turn_ang = float(self.get_parameter('turn_angular').value)
@@ -409,13 +417,26 @@ class WallFollower(Node):
             cmd.angular.z = 0.0
 
         elif self._mode == 'corner':
-            # Use fixed corner speed — _forward_speed would ramp to near-zero
-            # because the next wall enters the front sector exactly when the side
-            # wall opens up, collapsing the arc radius to ~0 (pure rotation).
-            # Hard-stop is still enforced by the front_blocked transition above.
-            speed = 0.0 if front_blocked else self._cruise
-            cmd.linear.x = float(speed * self._linear_scale)
-            cmd.angular.z = float(self._wall_sign * self._corner_turn)
+            # Guided arc: use the diagonal sensor to control the turn rate.
+            # Goal: keep the diagonal reading near corner_diag_target_m so the
+            # robot sweeps around the corner at a consistent radius instead of
+            # blindly applying a fixed angular velocity.
+            #
+            # When diag is nan (nothing in diagonal yet — early in the corner):
+            #   turn at minimum rate and keep moving so the new wall enters view.
+            # When diag sees the new wall:
+            #   error = diag - target; positive = too far out, increase turn rate.
+            #   error = diag - target; negative = cutting in too tight, reduce rate.
+            if not math.isnan(diag):
+                diag_err = diag - self._corner_diag_target
+                arc_turn = self._corner_turn_min + self._corner_kp * diag_err
+            else:
+                # No diagonal reading yet — use minimum turn to sweep into corner
+                arc_turn = self._corner_turn_min
+            arc_turn = self._clamp(arc_turn, self._corner_turn)
+            arc_turn = max(self._corner_turn_min, arc_turn)  # never below minimum
+            cmd.linear.x = float(self._corner_speed * self._linear_scale)
+            cmd.angular.z = float(self._wall_sign * arc_turn)
 
         elif self._mode == 'search':
             cmd.linear.x = float(self._search_spd * self._linear_scale)
