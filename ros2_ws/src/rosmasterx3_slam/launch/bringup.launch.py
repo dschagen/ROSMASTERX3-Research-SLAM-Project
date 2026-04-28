@@ -10,6 +10,9 @@ import os
 def generate_launch_description():
     yahboom_dir = get_package_share_directory('yahboomcar_bringup')
     sllidar_dir = get_package_share_directory('sllidar_ros2')
+    slam_dir    = get_package_share_directory('rosmasterx3_slam')
+
+    ekf_config = os.path.join(slam_dir, 'config', 'ekf_params.yaml')
 
     return LaunchDescription([
 
@@ -34,5 +37,14 @@ def generate_launch_description():
             name='laser_static_tf_pub',
             arguments=['0.10', '0.0', '0.12', '3.14159', '0', '0', 'base_link', 'laser'],
             output='screen'
+        ),
+
+        # 4) EKF — fuses /odom + /imu/data → filtered odom→base_link TF for SLAM
+        Node(
+            package='robot_localization',
+            executable='ekf_node',
+            name='ekf_filter_node',
+            output='screen',
+            parameters=[ekf_config],
         ),
     ])

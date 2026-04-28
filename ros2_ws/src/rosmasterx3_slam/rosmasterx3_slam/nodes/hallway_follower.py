@@ -23,10 +23,12 @@ class WallFollower(Node):
         self.declare_parameter('search_speed', 0.02)
         self.declare_parameter('linear_scale', 1.0)
 
-        # --- side-wall PD (no integral) ---
+        # --- side-wall PID ---
         self.declare_parameter('kp_side', 0.20)
+        self.declare_parameter('ki_side', 0.01)
         self.declare_parameter('kd_side', 0.40)
         self.declare_parameter('angular_max', 0.20)
+        self.declare_parameter('integral_max', 0.10)
 
         # --- front obstacle ---
         self.declare_parameter('front_stop_m', 0.30)
@@ -83,8 +85,10 @@ class WallFollower(Node):
         self._linear_scale = float(self.get_parameter('linear_scale').value)
 
         self._kp = float(self.get_parameter('kp_side').value)
+        self._ki = float(self.get_parameter('ki_side').value)
         self._kd = float(self.get_parameter('kd_side').value)
         self._ang_max = float(self.get_parameter('angular_max').value)
+        self._integral_max = float(self.get_parameter('integral_max').value)
 
         self._front_stop = float(self.get_parameter('front_stop_m').value)
         self._front_slow = float(self.get_parameter('front_slow_m').value)
@@ -159,6 +163,7 @@ class WallFollower(Node):
         self._prev_err = 0.0
         self._filtered_err = 0.0
         self._prev_raw_err = 0.0
+        self._integral_err = 0.0
         self._prev_time = None
         self._mode = 'follow'
         self._mode_start = None
@@ -429,8 +434,16 @@ class WallFollower(Node):
                 # D: raw error — single spike when obstacle clears, then zero while
                 #    error is stable. Avoids the continuous D amplification that
                 #    occurred when differentiating the filtered signal.
+                self._integral_err = self._clamp(
+                    self._integral_err + self._filtered_err * dt,
+                    self._integral_max
+                )
                 d_term = self._clamp((raw_err - self._prev_raw_err) / dt, 10.0)
-                raw = self._wall_sign * (self._kp * self._filtered_err + self._kd * d_term)
+                raw = self._wall_sign * (
+                    self._kp * self._filtered_err
+                    + self._ki * self._integral_err
+                    + self._kd * d_term
+                )
                 angular_z = self._clamp(raw, self._ang_max)
                 self._prev_err = self._filtered_err
                 self._prev_raw_err = raw_err
@@ -449,6 +462,7 @@ class WallFollower(Node):
         self._prev_err = 0.0
         self._filtered_err = 0.0
         self._prev_raw_err = 0.0
+        self._integral_err = 0.0
 
     # ---------------------------------------------------------- diagnostics --
 
