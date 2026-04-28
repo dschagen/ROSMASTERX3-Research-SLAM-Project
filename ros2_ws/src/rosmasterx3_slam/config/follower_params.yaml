@@ -14,8 +14,20 @@ hallway_follower:
     # --- side-wall PID ---
     # error = measured_side - wall_target  (positive = too far, negative = too close)
     kp_side: 0.20
+    ki_side: 0.004                # small integral — corrects persistent steady-state drift
     kd_side: 0.40
     angular_max: 0.20             # rad/s cap on all angular output
+    integral_max: 0.05            # anti-windup: caps integral contribution (rad/s)
+
+    # Dead-band: errors smaller than this (metres) are treated as zero.
+    # Stops LiDAR noise from driving constant micro-corrections.
+    error_deadband_m: 0.05
+
+    # Hallway centering: when the opposite wall is also visible, steer to the
+    # corridor midpoint with gentle P-only instead of single-wall PID.
+    hallway_center_mode: true
+    opposite_side_inner_deg: 60.0
+    opposite_side_outer_deg: 120.0
 
     # --- front obstacle ---
     front_stop_m: 0.25            # stop + enter turn mode below this
