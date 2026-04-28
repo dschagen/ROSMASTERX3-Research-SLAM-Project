@@ -380,9 +380,8 @@ class WallFollower(Node):
             cmd.angular.z = 0.0
 
         elif self._mode == 'corner':
-            # Omni wheels with reduced weight slip when linear + angular are combined.
-            # Stop completely and rotate in place until the wall comes back into range.
-            cmd.linear.x = 0.0
+            speed = self._forward_speed(front)
+            cmd.linear.x = float(speed * self._linear_scale)
             cmd.angular.z = float(self._wall_sign * self._corner_turn)
 
         elif self._mode == 'search':
