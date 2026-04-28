@@ -47,7 +47,7 @@ class WallFollower(Node):
         # --- corner mode ---
         self.declare_parameter('corner_open_m', 0.25)
         self.declare_parameter('corner_turn', 0.12)
-        self.declare_parameter('corner_timeout_sec', 4.0)
+        self.declare_parameter('corner_timeout_sec', 5.0)
 
         # --- turn mode ---
         self.declare_parameter('turn_angular', 0.08)

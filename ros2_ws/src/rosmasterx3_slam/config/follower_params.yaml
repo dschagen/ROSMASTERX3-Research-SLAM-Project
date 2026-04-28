@@ -46,8 +46,11 @@ hallway_follower:
 
     # --- corner mode (wall opens up at a corner) ---
     corner_open_m: 0.15           # wall must open this far past target to trigger
-    corner_turn: 0.18             # angular.z (rad/s) while wrapping the corner
-    corner_timeout_sec: 2.0       # give up and enter search if wall not found
+    # corner arc radius R = cruise_speed / corner_turn
+    # R = wall_target keeps robot centre at wall_target distance through the turn
+    # wheel_radius=0.0635m, half_track=0.09525m → inner=0.205m, outer=0.395m
+    corner_turn: 0.17             # 0.05 / 0.17 = 0.294m ≈ wall_target (0.30m)
+    corner_timeout_sec: 5.0       # give up and enter search if wall not found
 
     # --- turn mode (front obstacle) ---
     turn_angular: 0.20            # angular.z (rad/s) while turning away from wall
