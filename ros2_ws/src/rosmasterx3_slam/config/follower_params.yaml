@@ -13,11 +13,11 @@ hallway_follower:
     # --- side-wall PD (no integral) ---
     # error = measured_side - wall_target  (positive = too far, negative = too close)
     # Increase kp first. Add kd if the robot oscillates side to side.
-    kp_side: 0.40
-    ki_side: 0.01
-    kd_side: 0.80
-    angular_max: 0.35
-    integral_max: 0.10             # rad/s cap on all angular output
+    kp_side: 0.18
+    ki_side: 0.005
+    kd_side: 0.15
+    angular_max: 0.18
+    integral_max: 0.06             # rad/s cap on all angular output
 
     # --- front obstacle ---
     front_stop_m: 0.25            # stop + enter turn mode below this
