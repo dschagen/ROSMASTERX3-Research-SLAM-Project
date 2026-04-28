@@ -329,7 +329,12 @@ class WallFollower(Node):
             elif wall_seen and side > self._wall_target + self._corner_open:
                 self._switch('corner', now)
             elif not wall_seen:
-                self._switch('search', now)
+                # Wall gone — jump straight to explore if a frontier is ready,
+                # otherwise search (slow crawl) until one becomes available.
+                if goal_available:
+                    self._switch('explore', now)
+                else:
+                    self._switch('search', now)
 
         elif self._mode == 'corner':
             if front_blocked:
