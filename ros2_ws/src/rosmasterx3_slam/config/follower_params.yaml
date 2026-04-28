@@ -3,6 +3,7 @@ hallway_follower:
 
     # --- wall selection ---
     wall_side: "left"             # "left" or "right"
+    follow_any_wall: true         # switch to the other wall if the preferred wall disappears
     wall_target_m: 0.30           # target distance from wall (metres)
                                   # overridden at startup by calibration
 
@@ -15,7 +16,7 @@ hallway_follower:
     # error = measured_side - wall_target  (positive = too far, negative = too close)
     kp_side: 0.20
     ki_side: 0.004                # small integral — corrects persistent steady-state drift
-    kd_side: 0.40
+    kd_side: 0.25
     angular_max: 0.20             # rad/s cap on all angular output
     integral_max: 0.05            # anti-windup: caps integral contribution (rad/s)
 
@@ -26,6 +27,8 @@ hallway_follower:
     # Hallway centering: when the opposite wall is also visible, steer to the
     # corridor midpoint with gentle P-only instead of single-wall PID.
     hallway_center_mode: true
+    center_deadband_m: 0.03       # ignore tiny left/right imbalance in straight halls
+    center_angular_max: 0.08      # softer centering clamp than general angular_max
     opposite_side_inner_deg: 60.0
     opposite_side_outer_deg: 120.0
 
@@ -76,6 +79,9 @@ hallway_follower:
     side_outer_deg: 120.0
     diag_inner_deg: 30.0
     diag_outer_deg: 65.0
+    side_percentile: 25.0         # stable wall estimate; lower = more conservative
+    diag_percentile: 30.0
+    opp_percentile: 25.0
 
     # --- follow recovery ---
     # Slow down when side/center error is large so the robot can re-center after
@@ -89,3 +95,4 @@ hallway_follower:
 
     # --- startup ---
     prescan_count: 20             # scans to collect before moving
+    wall_switch_cooldown_sec: 0.8 # prevents rapid left/right flipping when both walls flicker
