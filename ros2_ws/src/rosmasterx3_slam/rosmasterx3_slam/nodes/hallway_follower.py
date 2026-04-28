@@ -404,7 +404,11 @@ class WallFollower(Node):
             cmd.angular.z = 0.0
 
         elif self._mode == 'corner':
-            speed = self._forward_speed(front)
+            # Use fixed corner speed — _forward_speed would ramp to near-zero
+            # because the next wall enters the front sector exactly when the side
+            # wall opens up, collapsing the arc radius to ~0 (pure rotation).
+            # Hard-stop is still enforced by the front_blocked transition above.
+            speed = 0.0 if front_blocked else self._cruise
             cmd.linear.x = float(speed * self._linear_scale)
             cmd.angular.z = float(self._wall_sign * self._corner_turn)
 
