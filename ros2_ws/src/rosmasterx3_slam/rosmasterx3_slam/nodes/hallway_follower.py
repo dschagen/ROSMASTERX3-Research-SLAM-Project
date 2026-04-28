@@ -157,6 +157,7 @@ class WallFollower(Node):
 
         # controller state
         self._prev_err = 0.0
+        self._filtered_err = 0.0
         self._prev_time = None
         self._mode = 'follow'
         self._mode_start = None
@@ -413,7 +414,15 @@ class WallFollower(Node):
         else:  # follow
             speed = self._forward_speed(front)
             if wall_seen:
-                err = side - self._wall_target
+                raw_err = side - self._wall_target
+                # Asymmetric filter: smooth the return after an obstacle clears
+                # (error increasing = robot drifted away), but respond immediately
+                # when the wall is approaching (error decreasing = getting too close).
+                if raw_err > self._filtered_err:
+                    self._filtered_err = 0.10 * raw_err + 0.90 * self._filtered_err
+                else:
+                    self._filtered_err = raw_err
+                err = self._filtered_err
                 d_term = self._clamp((err - self._prev_err) / dt, 10.0)
                 raw = self._wall_sign * (self._kp * err + self._kd * d_term)
                 angular_z = self._clamp(raw, self._ang_max)
@@ -431,6 +440,7 @@ class WallFollower(Node):
         self._mode = mode
         self._mode_start = now
         self._prev_err = 0.0
+        self._filtered_err = 0.0
 
     # ---------------------------------------------------------- diagnostics --
 
