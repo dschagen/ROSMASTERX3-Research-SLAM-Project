@@ -7,86 +7,61 @@ hallway_follower:
                                   # overridden at startup by calibration
 
     # --- forward speed ---
-    cruise_speed: 0.05            # m/s straight ahead
-    search_speed: 0.03            # m/s when wall is lost
+    cruise_speed: 0.03            # m/s straight ahead
+    search_speed: 0.02            # m/s when wall is lost
     linear_scale: 1.0             # set to -1.0 if motors are wired backwards
 
     # --- side-wall PID ---
     # error = measured_side - wall_target  (positive = too far, negative = too close)
-    #
-    # Oscillation fix summary:
-    #   1. Dead-band (error_deadband_m) absorbs LiDAR noise — no steering for tiny errors.
-    #   2. Removed the asymmetric lag filter on error (it created lag that D fought).
-    #   3. D clamp tightened from 10.0 → 2.0 so one noisy scan can't spike the robot.
-    #   4. In straight hallways both walls visible → centering mode replaces PID.
-    kp_side: 0.18
-    ki_side: 0.004                # very small — mainly holds steady-state offset
-    kd_side: 0.20                 # enough to damp overshoots without amplifying noise
-    angular_max: 0.18             # hard cap on angular output (rad/s)
-    integral_max: 0.05            # anti-windup cap
-
-    # --- dead-band ---
-    # Errors smaller than this are treated as zero.
-    # 0.06 m = 6 cm tolerance band — robot won't correct unless it drifts >6 cm
-    # from target. This is the main fix for the oscillation/U-turn bug.
-    error_deadband_m: 0.06
-
-    # --- hallway centering ---
-    # When the opposite wall is also visible, steer to the corridor midpoint
-    # using gentle P-only control instead of single-wall PID.
-    # This keeps the robot driving straight in a hallway.
-    hallway_center_mode: true
-    opposite_side_inner_deg: 60.0  # mirror of side_inner_deg
-    opposite_side_outer_deg: 120.0 # mirror of side_outer_deg
+    kp_side: 0.20
+    kd_side: 0.40
+    angular_max: 0.20             # rad/s cap on all angular output
 
     # --- front obstacle ---
     front_stop_m: 0.25            # stop + enter turn mode below this
     front_slow_m: 0.55            # begin linear speed ramp below this
-    front_half_angle_deg: 40.0    # front sector spans ±this from forward
+    front_half_angle_deg: 35.0    # front sector spans ±this from forward
 
     # --- corner mode (wall opens up at a corner) ---
-    corner_open_m: 0.15           # wall must open this far past target to trigger
-    # corner arc radius R = cruise_speed / corner_turn
-    # R = wall_target keeps robot centre at wall_target distance through the turn
-    # wheel_radius=0.0635m, half_track=0.09525m → inner=0.205m, outer=0.395m
-    corner_turn: 0.17             # 0.05 / 0.17 = 0.294m ≈ wall_target (0.30m)
-    corner_timeout_sec: 10.0      # 90° arc at 0.05 m/s takes ~9.2s — give it the full time
+    corner_open_m: 0.25           # wall must open this far past target to trigger
+    corner_turn: 0.15             # angular.z (rad/s) — pure rotation in place on omni wheels
+    corner_timeout_sec: 12.0      # 90° at 0.15 rad/s takes ~10.5s — give enough time
 
     # --- turn mode (front obstacle) ---
-    turn_angular: 0.20            # angular.z (rad/s) while turning away from wall
-    turn_min_time: 0.30           # minimum seconds spent turning before exiting
-    turn_max_time: 9.0            # 90° ÷ 0.20 rad/s = 7.85s — must be > this to clear a corner
+    turn_angular: 0.06            # angular.z (rad/s) while turning away from wall
+    turn_min_time: 0.80           # minimum seconds spent turning before exiting
+    turn_max_time: 4.0            # give up and enter search mode after this long
 
-    # --- LiDAR geometry ---
-    angle_offset_deg: 180.0       # 180 = LiDAR 0° faces backward
-
-    # Side sector: perpendicular to robot.
-    side_inner_deg: 60.0
-    side_outer_deg: 120.0
-
-    # Diagonal sector: used to detect wall during corner wrap.
-    diag_inner_deg: 30.0
-    diag_outer_deg: 65.0
-
-    # --- settle mode ---
-    settle_duration_sec: 2.0
+    # --- settle mode (robot sits still after a turn so SLAM gets clean scans) ---
+    settle_duration_sec: 2.5
 
     # --- exploration mode ---
-    explore_speed: 0.08
-    explore_turn_speed: 0.25
+    explore_speed: 0.06
+    explore_turn_speed: 0.20
     explore_angle_tol: 0.20
     explore_goal_dist: 0.40
-    explore_stuck_sec: 6.0
+    explore_stuck_sec: 8.0
 
     # --- recovery mode ---
-    recovery_backup_sec: 0.8
-    recovery_turn_sec: 1.2
+    recovery_backup_sec: 1.2
+    recovery_turn_sec: 2.0
     recovery_backup_speed: -0.07
-    recovery_turn_speed: 0.25
+    recovery_turn_speed: 0.20
+
+    # --- LiDAR geometry ---
+    # All angles in robot frame: 0°=forward, 90°=left, -90°=right.
+    # angle_offset_deg: rotate raw scan into robot frame.
+    #   0.0   = LiDAR 0° faces forward (normal)
+    #   180.0 = LiDAR 0° faces backward
+    angle_offset_deg: 180.0
+    side_inner_deg: 60.0
+    side_outer_deg: 120.0
+    diag_inner_deg: 30.0
+    diag_outer_deg: 65.0
 
     # --- timing ---
     control_period_sec: 0.05
     diag_interval_sec: 3.0
 
     # --- startup ---
-    prescan_count: 20
+    prescan_count: 20             # scans to collect before moving
