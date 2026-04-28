@@ -52,6 +52,7 @@ class WallFollower(Node):
         self.declare_parameter('corner_diag_target_m', 0.50)  # desired diag reading during arc
         self.declare_parameter('corner_kp', 0.30)          # proportional gain on diag error
         self.declare_parameter('corner_timeout_sec', 5.0)
+        self.declare_parameter('corner_exit_tol_m', 0.08)
 
         # --- turn mode ---
         self.declare_parameter('turn_angular', 0.08)
@@ -80,6 +81,10 @@ class WallFollower(Node):
         self.declare_parameter('side_outer_deg', 120.0)
         self.declare_parameter('diag_inner_deg', 30.0)
         self.declare_parameter('diag_outer_deg', 65.0)
+
+        # --- follow recovery ---
+        self.declare_parameter('recenter_slow_error_m', 0.10)
+        self.declare_parameter('recenter_speed_scale_min', 0.40)
 
         # --- misc ---
         self.declare_parameter('control_period_sec', 0.05)
@@ -118,6 +123,7 @@ class WallFollower(Node):
         self._corner_diag_target = float(self.get_parameter('corner_diag_target_m').value)
         self._corner_kp = float(self.get_parameter('corner_kp').value)
         self._corner_timeout = float(self.get_parameter('corner_timeout_sec').value)
+        self._corner_exit_tol = float(self.get_parameter('corner_exit_tol_m').value)
 
         self._turn_ang = float(self.get_parameter('turn_angular').value)
         self._turn_min_t = float(self.get_parameter('turn_min_time').value)
@@ -136,6 +142,10 @@ class WallFollower(Node):
         self._recovery_turn_spd = float(self.get_parameter('recovery_turn_speed').value)
 
         self._angle_offset = math.radians(self.get_parameter('angle_offset_deg').value)
+        self._recenter_slow_error = float(self.get_parameter('recenter_slow_error_m').value)
+        self._recenter_speed_scale_min = float(
+            self.get_parameter('recenter_speed_scale_min').value
+        )
 
         si = math.radians(self.get_parameter('side_inner_deg').value)
         so = math.radians(self.get_parameter('side_outer_deg').value)
@@ -355,9 +365,15 @@ class WallFollower(Node):
                 else:
                     self._switch('search', now)
             else:
-                diag_close = not math.isnan(diag) and diag <= self._wall_target + self._corner_open
-                side_back = wall_seen and side <= self._wall_target + self._corner_open
-                if diag_close or side_back:
+                # Exit corner mode only once the side wall has returned close to the
+                # desired offset. The old logic exited as soon as any wall showed up
+                # again, which could hand control back while the robot was still
+                # hugging the inside wall of the corner.
+                side_aligned = (
+                    wall_seen
+                    and abs(side - self._wall_target) <= self._corner_exit_tol
+                )
+                if side_aligned:
                     self._switch('follow', now)
 
         elif self._mode == 'turn':
@@ -472,6 +488,7 @@ class WallFollower(Node):
 
         else:  # follow
             speed = self._forward_speed(front)
+            follow_err_mag = 0.0
             if wall_seen:
                 raw_err = side - self._wall_target
 
@@ -484,6 +501,7 @@ class WallFollower(Node):
                 if self._hallway_center_mode and not math.isnan(opp):
                     hallway_width = side + opp
                     center_err = side - hallway_width / 2.0
+                    follow_err_mag = abs(center_err)
                     # Gentle P-only; clamp to half angular_max so it barely nudges
                     angular_z = self._clamp(
                         self._wall_sign * self._kp * center_err,
@@ -495,6 +513,7 @@ class WallFollower(Node):
                     self._integral_err = 0.0
 
                 else:
+                    follow_err_mag = abs(raw_err)
                     # --- Single-wall PID with dead-band ---
                     # Dead-band: suppress corrections for errors smaller than
                     # error_deadband_m. This stops LiDAR noise (±1-2 cm) from
@@ -533,6 +552,12 @@ class WallFollower(Node):
                     self._prev_raw_err = raw_err
             else:
                 angular_z = 0.0
+            if self._recenter_slow_error > 1e-3:
+                recenter_frac = min(1.0, follow_err_mag / self._recenter_slow_error)
+                recenter_scale = 1.0 - (
+                    (1.0 - self._recenter_speed_scale_min) * recenter_frac
+                )
+                speed *= recenter_scale
             cmd.linear.x = float(speed * self._linear_scale)
             cmd.angular.z = float(angular_z)
 

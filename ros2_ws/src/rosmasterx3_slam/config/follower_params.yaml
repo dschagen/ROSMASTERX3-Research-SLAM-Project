@@ -43,6 +43,7 @@ hallway_follower:
                                   # increase = wider arc, decrease = tighter arc
     corner_kp: 0.30               # how aggressively to adjust turn rate from diag error
     corner_timeout_sec: 5.0       # give up if wall never returns after this long
+    corner_exit_tol_m: 0.08       # only exit corner mode once side distance is near target
 
     # --- turn mode (front obstacle) ---
     turn_angular: 0.06            # angular.z (rad/s) while turning away from wall
@@ -75,6 +76,12 @@ hallway_follower:
     side_outer_deg: 120.0
     diag_inner_deg: 30.0
     diag_outer_deg: 65.0
+
+    # --- follow recovery ---
+    # Slow down when side/center error is large so the robot can re-center after
+    # corners instead of carrying too much forward momentum into an overshoot.
+    recenter_slow_error_m: 0.10
+    recenter_speed_scale_min: 0.40
 
     # --- timing ---
     control_period_sec: 0.05
