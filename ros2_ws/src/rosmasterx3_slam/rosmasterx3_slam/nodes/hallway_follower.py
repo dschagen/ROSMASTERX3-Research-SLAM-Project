@@ -158,6 +158,7 @@ class WallFollower(Node):
         # controller state
         self._prev_err = 0.0
         self._filtered_err = 0.0
+        self._prev_raw_err = 0.0
         self._prev_time = None
         self._mode = 'follow'
         self._mode_start = None
@@ -310,7 +311,12 @@ class WallFollower(Node):
             if front_blocked:
                 self._switch('turn', now)
             elif elapsed >= self._corner_timeout:
-                self._switch('search', now)
+                # Wall didn't return — likely a junction/branch opening, not a corner.
+                # Go straight to explore if a frontier goal is ready.
+                if goal_available:
+                    self._switch('explore', now)
+                else:
+                    self._switch('search', now)
             else:
                 diag_close = not math.isnan(diag) and diag <= self._wall_target + self._corner_open
                 side_back = wall_seen and side <= self._wall_target + self._corner_open
@@ -415,18 +421,20 @@ class WallFollower(Node):
             speed = self._forward_speed(front)
             if wall_seen:
                 raw_err = side - self._wall_target
-                # Asymmetric filter: smooth the return after an obstacle clears
-                # (error increasing = robot drifted away), but respond immediately
-                # when the wall is approaching (error decreasing = getting too close).
+                # P: filtered error — slow asymmetric ramp back after obstacle clears;
+                #    immediate response when wall closes in (getting too close).
                 if raw_err > self._filtered_err:
                     self._filtered_err = 0.10 * raw_err + 0.90 * self._filtered_err
                 else:
                     self._filtered_err = raw_err
-                err = self._filtered_err
-                d_term = self._clamp((err - self._prev_err) / dt, 10.0)
-                raw = self._wall_sign * (self._kp * err + self._kd * d_term)
+                # D: raw error — single spike when obstacle clears, then zero while
+                #    error is stable. Avoids the continuous D amplification that
+                #    occurred when differentiating the filtered signal.
+                d_term = self._clamp((raw_err - self._prev_raw_err) / dt, 10.0)
+                raw = self._wall_sign * (self._kp * self._filtered_err + self._kd * d_term)
                 angular_z = self._clamp(raw, self._ang_max)
-                self._prev_err = err
+                self._prev_err = self._filtered_err
+                self._prev_raw_err = raw_err
             else:
                 angular_z = 0.0
             cmd.linear.x = float(speed * self._linear_scale)
@@ -441,6 +449,7 @@ class WallFollower(Node):
         self._mode_start = now
         self._prev_err = 0.0
         self._filtered_err = 0.0
+        self._prev_raw_err = 0.0
 
     # ---------------------------------------------------------- diagnostics --
 

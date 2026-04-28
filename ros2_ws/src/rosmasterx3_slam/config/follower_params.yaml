@@ -25,7 +25,7 @@ hallway_follower:
     # --- corner mode (wall opens up at a corner) ---
     corner_open_m: 0.15           # wall must open this far past target to trigger
     corner_turn: 0.18             # angular.z (rad/s) while wrapping the corner
-    corner_timeout_sec: 4.0       # give up and enter search if wall not found after this long
+    corner_timeout_sec: 2.0       # give up and enter search if wall not found after this long
 
     # --- turn mode (front obstacle) ---
     turn_angular: 0.20            # angular.z (rad/s) while turning away from wall
