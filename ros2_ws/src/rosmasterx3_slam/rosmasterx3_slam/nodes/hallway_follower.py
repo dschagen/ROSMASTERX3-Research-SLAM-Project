@@ -34,13 +34,9 @@ class WallFollower(Node):
         # --- dead-band: ignore errors smaller than this (m) ---
         self.declare_parameter('error_deadband_m', 0.06)
 
-        # --- straight hallway detection ---
-        # If opposite wall is within this range, use centering mode instead of PID
-        self.declare_parameter('opposite_side_inner_deg', 60.0)
-        self.declare_parameter('opposite_side_outer_deg', 120.0)
-        self.declare_parameter('hallway_center_mode', True)
-        self.declare_parameter('center_deadband_m', 0.03)
-        self.declare_parameter('center_angular_max', 0.08)
+        # --- clear-path straight driving ---
+        self.declare_parameter('straight_front_min_m', 0.90)
+        self.declare_parameter('straight_pid_error_m', 0.08)
 
         # --- front obstacle ---
         self.declare_parameter('front_stop_m', 0.30)
@@ -117,9 +113,8 @@ class WallFollower(Node):
         self._ang_max = float(self.get_parameter('angular_max').value)
         self._integral_max = float(self.get_parameter('integral_max').value)
         self._error_deadband = float(self.get_parameter('error_deadband_m').value)
-        self._hallway_center_mode = bool(self.get_parameter('hallway_center_mode').value)
-        self._center_deadband = float(self.get_parameter('center_deadband_m').value)
-        self._center_ang_max = float(self.get_parameter('center_angular_max').value)
+        self._straight_front_min = float(self.get_parameter('straight_front_min_m').value)
+        self._straight_pid_error = float(self.get_parameter('straight_pid_error_m').value)
 
         self._front_stop = float(self.get_parameter('front_stop_m').value)
         self._front_slow = float(self.get_parameter('front_slow_m').value)
@@ -181,12 +176,6 @@ class WallFollower(Node):
         self._diag_lo = min(s * di, s * do_)
         self._diag_hi = max(s * di, s * do_)
 
-        # Opposite-wall sector: mirror of side sector on the other side
-        oi = math.radians(self.get_parameter('opposite_side_inner_deg').value)
-        oo = math.radians(self.get_parameter('opposite_side_outer_deg').value)
-        self._opp_lo = min(-s * oi, -s * oo)
-        self._opp_hi = max(-s * oi, -s * oo)
-
         period = float(self.get_parameter('control_period_sec').value)
         self._diag_interval = float(self.get_parameter('diag_interval_sec').value)
         self._prescan_target = int(self.get_parameter('prescan_count').value)
@@ -208,7 +197,7 @@ class WallFollower(Node):
         self._side_range = float('nan')
         self._diag_range = float('nan')
         self._rear_range = float('nan')
-        self._opp_range = float('nan')   # opposite wall (for hallway centering)
+        self._opp_range = float('nan')
         self._left_side_range = float('nan')
         self._right_side_range = float('nan')
         self._left_diag_range = float('nan')
