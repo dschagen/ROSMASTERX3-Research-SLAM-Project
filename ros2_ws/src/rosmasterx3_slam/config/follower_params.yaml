@@ -27,7 +27,7 @@ hallway_follower:
     # Straight driving: if the front is clear and wall error is small, hold a
     # straight heading instead of constantly nudging with PID.
     straight_front_min_m: 0.90
-    straight_pid_error_m: 0.08
+    straight_pid_error_m: 0.10
 
     # --- front obstacle ---
     front_stop_m: 0.25            # stop + enter turn mode below this
