@@ -17,6 +17,16 @@ hallway_follower:
     kp_side: 0.20
     kd_side: 0.40
     angular_max: 0.20             # rad/s cap on all angular output
+    integral_max: 0.05            # anti-windup: caps integral contribution (rad/s)
+
+    # Dead-band: errors smaller than this (metres) are treated as zero.
+    # Stops LiDAR noise from driving constant micro-corrections.
+    error_deadband_m: 0.05
+
+    # Straight driving: if the front is clear and wall error is small, hold a
+    # straight heading instead of constantly nudging with PID.
+    straight_front_min_m: 0.90
+    straight_pid_error_m: 0.08
 
     # --- front obstacle ---
     front_stop_m: 0.25            # stop + enter turn mode below this
