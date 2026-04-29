@@ -16,6 +16,7 @@ class WallFollower(Node):
 
         # --- wall selection ---
         self.declare_parameter('wall_side', 'left')
+        self.declare_parameter('follow_any_wall', True)
         self.declare_parameter('wall_target_m', 0.30)
 
         # --- forward speed ---
@@ -29,14 +30,19 @@ class WallFollower(Node):
         self.declare_parameter('angular_max', 0.20)
 
         # --- front obstacle ---
-        self.declare_parameter('front_stop_m', 0.30)
-        self.declare_parameter('front_slow_m', 0.60)
-        self.declare_parameter('front_half_angle_deg', 40.0)
+        self.declare_parameter('front_stop_m', 0.22)
+        self.declare_parameter('front_slow_m', 0.45)
+        self.declare_parameter('front_half_angle_deg', 35.0)
 
         # --- corner mode ---
         self.declare_parameter('corner_open_m', 0.25)
         self.declare_parameter('corner_turn', 0.12)
+        self.declare_parameter('corner_turn_min', 0.06)
+        self.declare_parameter('corner_speed', 0.025)
+        self.declare_parameter('corner_diag_target_m', 0.50)
+        self.declare_parameter('corner_kp', 0.30)
         self.declare_parameter('corner_timeout_sec', 4.0)
+        self.declare_parameter('corner_exit_tol_m', 0.08)
 
         # --- turn mode ---
         self.declare_parameter('turn_angular', 0.08)
@@ -72,9 +78,11 @@ class WallFollower(Node):
 
         # --- startup ---
         self.declare_parameter('prescan_count', 20)
+        self.declare_parameter('wall_switch_cooldown_sec', 0.8)
 
         # ---- read all params ----
         wall_side_str = self.get_parameter('wall_side').value
+        self._follow_any_wall = bool(self.get_parameter('follow_any_wall').value)
         self._wall_sign = 1.0 if wall_side_str == 'left' else -1.0
         self._wall_target = float(self.get_parameter('wall_target_m').value)
 
@@ -94,7 +102,12 @@ class WallFollower(Node):
 
         self._corner_open = float(self.get_parameter('corner_open_m').value)
         self._corner_turn = float(self.get_parameter('corner_turn').value)
+        self._corner_turn_min = float(self.get_parameter('corner_turn_min').value)
+        self._corner_speed = float(self.get_parameter('corner_speed').value)
+        self._corner_diag_target = float(self.get_parameter('corner_diag_target_m').value)
+        self._corner_kp = float(self.get_parameter('corner_kp').value)
         self._corner_timeout = float(self.get_parameter('corner_timeout_sec').value)
+        self._corner_exit_tol = float(self.get_parameter('corner_exit_tol_m').value)
 
         self._turn_ang = float(self.get_parameter('turn_angular').value)
         self._turn_min_t = float(self.get_parameter('turn_min_time').value)
@@ -119,6 +132,15 @@ class WallFollower(Node):
         di = math.radians(self.get_parameter('diag_inner_deg').value)
         do_ = math.radians(self.get_parameter('diag_outer_deg').value)
 
+        self._left_side_lo = min(si, so)
+        self._left_side_hi = max(si, so)
+        self._right_side_lo = -self._left_side_hi
+        self._right_side_hi = -self._left_side_lo
+        self._left_diag_lo = min(di, do_)
+        self._left_diag_hi = max(di, do_)
+        self._right_diag_lo = -self._left_diag_hi
+        self._right_diag_hi = -self._left_diag_lo
+
         s = self._wall_sign
         self._side_lo = min(s * si, s * so)
         self._side_hi = max(s * si, s * so)
@@ -128,6 +150,9 @@ class WallFollower(Node):
         period = float(self.get_parameter('control_period_sec').value)
         self._diag_interval = float(self.get_parameter('diag_interval_sec').value)
         self._prescan_target = int(self.get_parameter('prescan_count').value)
+        self._wall_switch_cooldown = float(
+            self.get_parameter('wall_switch_cooldown_sec').value
+        )
 
         # subscriptions
         self.create_subscription(LaserScan, '/scan', self.scan_callback, 10)
@@ -143,6 +168,11 @@ class WallFollower(Node):
         self._side_range = float('nan')
         self._diag_range = float('nan')
         self._rear_range = float('nan')
+        self._opp_range = float('nan')
+        self._left_side_range = float('nan')
+        self._right_side_range = float('nan')
+        self._left_diag_range = float('nan')
+        self._right_diag_range = float('nan')
         self._scan_received = False
 
         # startup calibration
@@ -161,6 +191,7 @@ class WallFollower(Node):
         self._mode = 'follow'
         self._mode_start = None
         self._last_diag_time = 0.0
+        self._last_wall_switch_time = 0.0
 
         self.timer = self.create_timer(period, self.publish_command)
         self.get_logger().info(
@@ -175,8 +206,11 @@ class WallFollower(Node):
     def scan_callback(self, msg: LaserScan) -> None:
         off = self._angle_offset
         self._front_range = self._sector_min(msg, self._front_lo, self._front_hi, off)
-        self._side_range = self._sector_min(msg, self._side_lo, self._side_hi, off)
-        self._diag_range = self._sector_min(msg, self._diag_lo, self._diag_hi, off)
+        self._left_side_range = self._sector_min(msg, self._left_side_lo, self._left_side_hi, off)
+        self._right_side_range = self._sector_min(msg, self._right_side_lo, self._right_side_hi, off)
+        self._left_diag_range = self._sector_min(msg, self._left_diag_lo, self._left_diag_hi, off)
+        self._right_diag_range = self._sector_min(msg, self._right_diag_lo, self._right_diag_hi, off)
+        self._refresh_active_wall_ranges()
         # Rear sector: ±40° around 180° (two halves that straddle the ±π wrap)
         rear_l = self._sector_min(msg, math.radians(140.0), math.pi, off)
         rear_r = self._sector_min(msg, -math.pi, math.radians(-140.0), off)
@@ -229,6 +263,41 @@ class WallFollower(Node):
             if r < rmin:
                 rmin = r
         return rmin if rmin != float('inf') else float('nan')
+
+    def _refresh_active_wall_ranges(self) -> None:
+        if self._wall_sign > 0.0:
+            self._side_range = self._left_side_range
+            self._diag_range = self._left_diag_range
+            self._opp_range = self._right_side_range
+        else:
+            self._side_range = self._right_side_range
+            self._diag_range = self._right_diag_range
+            self._opp_range = self._left_side_range
+
+    def _set_active_wall(self, wall_side: str, now: float) -> None:
+        self._wall_sign = 1.0 if wall_side == 'left' else -1.0
+        s = self._wall_sign
+        self._side_lo = self._left_side_lo if s > 0.0 else self._right_side_lo
+        self._side_hi = self._left_side_hi if s > 0.0 else self._right_side_hi
+        self._diag_lo = self._left_diag_lo if s > 0.0 else self._right_diag_lo
+        self._diag_hi = self._left_diag_hi if s > 0.0 else self._right_diag_hi
+        self._refresh_active_wall_ranges()
+        self._last_wall_switch_time = now
+        self._prev_err = 0.0
+        self.get_logger().info(f'Active wall -> {wall_side}')
+
+    def _try_switch_wall(self, now: float) -> bool:
+        if not self._follow_any_wall:
+            return False
+        if (now - self._last_wall_switch_time) < self._wall_switch_cooldown:
+            return False
+        if not math.isnan(self._side_range):
+            return False
+        if math.isnan(self._opp_range):
+            return False
+        new_side = 'right' if self._wall_sign > 0.0 else 'left'
+        self._set_active_wall(new_side, now)
+        return True
 
     # --------------------------------------------------------------- helpers --
 
@@ -287,6 +356,10 @@ class WallFollower(Node):
         side = self._side_range
         diag = self._diag_range
 
+        if self._try_switch_wall(now):
+            side = self._side_range
+            diag = self._diag_range
+
         wall_seen = not math.isnan(side)
         front_blocked = not math.isnan(front) and front <= self._front_stop
         front_clear = not front_blocked
@@ -311,9 +384,8 @@ class WallFollower(Node):
             elif elapsed >= self._corner_timeout:
                 self._switch('search', now)
             else:
-                diag_close = not math.isnan(diag) and diag <= self._wall_target + self._corner_open
-                side_back = wall_seen and side <= self._wall_target + self._corner_open
-                if diag_close or side_back:
+                side_aligned = wall_seen and abs(side - self._wall_target) <= self._corner_exit_tol
+                if side_aligned:
                     self._switch('follow', now)
 
         elif self._mode == 'turn':
@@ -324,12 +396,16 @@ class WallFollower(Node):
 
         elif self._mode == 'settle':
             if elapsed >= self._settle_duration:
+                if self._try_switch_wall(now):
+                    wall_seen = not math.isnan(self._side_range)
                 if wall_seen:
                     self._switch('follow', now)
                 else:
                     self._switch('search', now)
 
         elif self._mode == 'search':
+            if self._try_switch_wall(now):
+                wall_seen = not math.isnan(self._side_range)
             if wall_seen:
                 self._switch('follow', now)
             elif front_blocked:
@@ -373,10 +449,15 @@ class WallFollower(Node):
             cmd.angular.z = 0.0
 
         elif self._mode == 'corner':
-            # Omni wheels with reduced weight slip when linear + angular are combined.
-            # Stop completely and rotate in place until the wall comes back into range.
-            cmd.linear.x = 0.0
-            cmd.angular.z = float(self._wall_sign * self._corner_turn)
+            if not math.isnan(diag):
+                diag_err = diag - self._corner_diag_target
+                arc_turn = self._corner_turn_min + self._corner_kp * diag_err
+            else:
+                arc_turn = self._corner_turn_min
+            arc_turn = self._clamp(arc_turn, self._corner_turn)
+            arc_turn = max(self._corner_turn_min, arc_turn)
+            cmd.linear.x = float(self._corner_speed * self._linear_scale)
+            cmd.angular.z = float(self._wall_sign * arc_turn)
 
         elif self._mode == 'search':
             cmd.linear.x = float(self._search_spd * self._linear_scale)
@@ -443,7 +524,7 @@ class WallFollower(Node):
                     if self._goal_dx is not None else 'goal=none')
         self.get_logger().info(
             f'DIAG | mode={self._mode:16s} front={fmt(front)} '
-            f'side={fmt(side)} diag={fmt(diag)} {goal_str}'
+            f'side={fmt(side)} opp={fmt(self._opp_range)} diag={fmt(diag)} {goal_str}'
         )
 
 

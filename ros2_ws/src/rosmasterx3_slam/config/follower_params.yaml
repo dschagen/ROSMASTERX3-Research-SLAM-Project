@@ -2,94 +2,67 @@ hallway_follower:
   ros__parameters:
 
     # --- wall selection ---
-    wall_side: "left"             # "left" or "right"
-    follow_any_wall: true         # switch to the other wall if the preferred wall disappears
-    wall_target_m: 0.30           # target distance from wall (metres)
-                                  # overridden at startup by calibration
+    wall_side: "left"
+    follow_any_wall: true
+    wall_target_m: 0.30
 
     # --- forward speed ---
-    cruise_speed: 0.03            # m/s straight ahead
-    search_speed: 0.02            # m/s when wall is lost
-    linear_scale: 1.0             # set to -1.0 if motors are wired backwards
+    cruise_speed: 0.03
+    search_speed: 0.02
+    linear_scale: 1.0
 
-    # --- side-wall PID ---
-    # error = measured_side - wall_target  (positive = too far, negative = too close)
+    # --- side-wall PD (no integral) ---
     kp_side: 0.20
-    ki_side: 0.004                # small integral — corrects persistent steady-state drift
-    kd_side: 0.25
-    angular_max: 0.20             # rad/s cap on all angular output
-    integral_max: 0.05            # anti-windup: caps integral contribution (rad/s)
-
-    # Dead-band: errors smaller than this (metres) are treated as zero.
-    # Stops LiDAR noise from driving constant micro-corrections.
-    error_deadband_m: 0.05
-
-    # Straight driving: if the front is clear and wall error is small, hold a
-    # straight heading instead of constantly nudging with PID.
-    straight_front_min_m: 0.90
-    straight_pid_error_m: 0.10
+    kd_side: 0.40
+    angular_max: 0.20
 
     # --- front obstacle ---
-    front_stop_m: 0.25            # stop + enter turn mode below this
-    front_slow_m: 0.55            # begin linear speed ramp below this
-    front_half_angle_deg: 35.0    # front sector spans ±this from forward
+    front_stop_m: 0.22
+    front_slow_m: 0.45
+    front_half_angle_deg: 35.0
 
-    # --- corner mode (wall opens up at a corner) ---
-    corner_open_m: 0.25           # wall must open this far past target to trigger
-    corner_turn: 0.18             # max angular.z (rad/s) during guided arc
-    corner_turn_min: 0.06         # min angular.z — always turning at least this fast
-    corner_speed: 0.025           # forward speed during arc (slow = tighter radius)
-    corner_diag_target_m: 0.50    # target diagonal reading during arc (m)
-                                  # increase = wider arc, decrease = tighter arc
-    corner_kp: 0.30               # how aggressively to adjust turn rate from diag error
-    corner_timeout_sec: 5.0       # give up if wall never returns after this long
-    corner_exit_tol_m: 0.08       # only exit corner mode once side distance is near target
+    # --- corner mode ---
+    corner_open_m: 0.25
+    corner_turn: 0.12
+    corner_turn_min: 0.06
+    corner_speed: 0.025
+    corner_diag_target_m: 0.50
+    corner_kp: 0.30
+    corner_timeout_sec: 4.0
+    corner_exit_tol_m: 0.08
 
-    # --- turn mode (front obstacle) ---
-    turn_angular: 0.06            # angular.z (rad/s) while turning away from wall
-    turn_min_time: 0.80           # minimum seconds spent turning before exiting
-    turn_max_time: 4.0            # give up and enter search mode after this long
+    # --- turn mode ---
+    turn_angular: 0.08
+    turn_min_time: 0.50
+    turn_max_time: 2.0
 
-    # --- settle mode (robot sits still after a turn so SLAM gets clean scans) ---
-    settle_duration_sec: 2.5
+    # --- settle mode ---
+    settle_duration_sec: 2.0
 
     # --- exploration mode ---
-    explore_speed: 0.06
-    explore_turn_speed: 0.20
+    explore_speed: 0.08
+    explore_turn_speed: 0.25
     explore_angle_tol: 0.20
     explore_goal_dist: 0.40
-    explore_stuck_sec: 8.0
+    explore_stuck_sec: 6.0
 
     # --- recovery mode ---
-    recovery_backup_sec: 1.2
-    recovery_turn_sec: 2.0
+    recovery_backup_sec: 0.8
+    recovery_turn_sec: 1.2
     recovery_backup_speed: -0.07
-    recovery_turn_speed: 0.20
+    recovery_turn_speed: 0.25
 
     # --- LiDAR geometry ---
-    # All angles in robot frame: 0°=forward, 90°=left, -90°=right.
-    # angle_offset_deg: rotate raw scan into robot frame.
-    #   0.0   = LiDAR 0° faces forward (normal)
-    #   180.0 = LiDAR 0° faces backward
     angle_offset_deg: 180.0
     side_inner_deg: 60.0
     side_outer_deg: 120.0
     diag_inner_deg: 30.0
     diag_outer_deg: 65.0
-    side_percentile: 25.0         # stable wall estimate; lower = more conservative
-    diag_percentile: 30.0
-    opp_percentile: 25.0
-
-    # --- follow recovery ---
-    # Slow down when wall error is large so the robot can settle after corners
-    # instead of carrying too much forward momentum into an overshoot.
-    recenter_slow_error_m: 0.10
-    recenter_speed_scale_min: 0.40
 
     # --- timing ---
     control_period_sec: 0.05
     diag_interval_sec: 3.0
 
     # --- startup ---
-    prescan_count: 20             # scans to collect before moving
-    wall_switch_cooldown_sec: 0.8 # prevents rapid left/right flipping when both walls flicker
+    prescan_count: 20
+    wall_switch_cooldown_sec: 0.8
