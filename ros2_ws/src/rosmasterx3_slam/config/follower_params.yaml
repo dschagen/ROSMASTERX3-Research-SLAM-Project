@@ -24,13 +24,10 @@ hallway_follower:
     # Stops LiDAR noise from driving constant micro-corrections.
     error_deadband_m: 0.05
 
-    # Hallway centering: when the opposite wall is also visible, steer to the
-    # corridor midpoint with gentle P-only instead of single-wall PID.
-    hallway_center_mode: true
-    center_deadband_m: 0.03       # ignore tiny left/right imbalance in straight halls
-    center_angular_max: 0.08      # softer centering clamp than general angular_max
-    opposite_side_inner_deg: 60.0
-    opposite_side_outer_deg: 120.0
+    # Straight driving: if the front is clear and wall error is small, hold a
+    # straight heading instead of constantly nudging with PID.
+    straight_front_min_m: 0.90
+    straight_pid_error_m: 0.08
 
     # --- front obstacle ---
     front_stop_m: 0.25            # stop + enter turn mode below this
@@ -84,8 +81,8 @@ hallway_follower:
     opp_percentile: 25.0
 
     # --- follow recovery ---
-    # Slow down when side/center error is large so the robot can re-center after
-    # corners instead of carrying too much forward momentum into an overshoot.
+    # Slow down when wall error is large so the robot can settle after corners
+    # instead of carrying too much forward momentum into an overshoot.
     recenter_slow_error_m: 0.10
     recenter_speed_scale_min: 0.40
 

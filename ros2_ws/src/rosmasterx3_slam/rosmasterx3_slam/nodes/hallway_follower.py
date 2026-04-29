@@ -6,7 +6,7 @@ import time
 import rclpy
 from rclpy.node import Node
 
-from geometry_msgs.msg import Twist, Point
+from geometry_msgs.msg import Point, Twist
 from sensor_msgs.msg import LaserScan
 
 
@@ -30,8 +30,6 @@ class WallFollower(Node):
         self.declare_parameter('kd_side', 0.40)
         self.declare_parameter('angular_max', 0.20)
         self.declare_parameter('integral_max', 0.10)
-
-        # --- dead-band: ignore errors smaller than this (m) ---
         self.declare_parameter('error_deadband_m', 0.06)
 
         # --- clear-path straight driving ---
@@ -45,11 +43,11 @@ class WallFollower(Node):
 
         # --- corner mode ---
         self.declare_parameter('corner_open_m', 0.25)
-        self.declare_parameter('corner_turn', 0.12)        # max angular during arc
-        self.declare_parameter('corner_turn_min', 0.06)    # min angular during arc
-        self.declare_parameter('corner_speed', 0.025)      # forward speed during arc
-        self.declare_parameter('corner_diag_target_m', 0.50)  # desired diag reading during arc
-        self.declare_parameter('corner_kp', 0.30)          # proportional gain on diag error
+        self.declare_parameter('corner_turn', 0.12)
+        self.declare_parameter('corner_turn_min', 0.06)
+        self.declare_parameter('corner_speed', 0.025)
+        self.declare_parameter('corner_diag_target_m', 0.50)
+        self.declare_parameter('corner_kp', 0.30)
         self.declare_parameter('corner_timeout_sec', 5.0)
         self.declare_parameter('corner_exit_tol_m', 0.08)
 
@@ -96,7 +94,7 @@ class WallFollower(Node):
         self.declare_parameter('prescan_count', 20)
         self.declare_parameter('wall_switch_cooldown_sec', 0.8)
 
-        # ---- read all params ----
+        # ---- read params ----
         wall_side_str = self.get_parameter('wall_side').value
         self._preferred_wall_side = wall_side_str
         self._follow_any_wall = bool(self.get_parameter('follow_any_wall').value)
@@ -148,13 +146,13 @@ class WallFollower(Node):
         self._recovery_turn_spd = float(self.get_parameter('recovery_turn_speed').value)
 
         self._angle_offset = math.radians(self.get_parameter('angle_offset_deg').value)
+        self._side_percentile = float(self.get_parameter('side_percentile').value)
+        self._diag_percentile = float(self.get_parameter('diag_percentile').value)
+        self._opp_percentile = float(self.get_parameter('opp_percentile').value)
         self._recenter_slow_error = float(self.get_parameter('recenter_slow_error_m').value)
         self._recenter_speed_scale_min = float(
             self.get_parameter('recenter_speed_scale_min').value
         )
-        self._side_percentile = float(self.get_parameter('side_percentile').value)
-        self._diag_percentile = float(self.get_parameter('diag_percentile').value)
-        self._opp_percentile = float(self.get_parameter('opp_percentile').value)
 
         si = math.radians(self.get_parameter('side_inner_deg').value)
         so = math.radians(self.get_parameter('side_outer_deg').value)
@@ -170,11 +168,7 @@ class WallFollower(Node):
         self._right_diag_lo = -self._left_diag_hi
         self._right_diag_hi = -self._left_diag_lo
 
-        s = self._wall_sign
-        self._side_lo = min(s * si, s * so)
-        self._side_hi = max(s * si, s * so)
-        self._diag_lo = min(s * di, s * do_)
-        self._diag_hi = max(s * di, s * do_)
+        self._set_wall_geometry_from_sign()
 
         period = float(self.get_parameter('control_period_sec').value)
         self._diag_interval = float(self.get_parameter('diag_interval_sec').value)
@@ -183,16 +177,13 @@ class WallFollower(Node):
             self.get_parameter('wall_switch_cooldown_sec').value
         )
 
-        # subscriptions
         self.create_subscription(LaserScan, '/scan', self.scan_callback, 10)
         self.create_subscription(Point, '/exploration_goal', self._goal_callback, 10)
         self.cmd_pub = self.create_publisher(Twist, '/cmd_vel_safe', 10)
 
-        # prescan state
         self._prescan_done = False
         self._scan_count = 0
 
-        # sensor state
         self._front_range = float('nan')
         self._side_range = float('nan')
         self._diag_range = float('nan')
@@ -204,17 +195,14 @@ class WallFollower(Node):
         self._right_diag_range = float('nan')
         self._scan_received = False
 
-        # startup calibration
         self._calibrated = False
         self._calib_samples = []
         self._calib_target = 5
 
-        # frontier goal state
         self._goal_dx = None
         self._goal_dy = None
         self._goal_yaw = None
 
-        # controller state
         self._prev_err = 0.0
         self._filtered_err = 0.0
         self._prev_raw_err = 0.0
@@ -227,13 +215,18 @@ class WallFollower(Node):
 
         self.timer = self.create_timer(period, self.publish_command)
         self.get_logger().info(
-            f'Wall follower ready — wall={wall_side_str}  target={self._wall_target:.2f}m'
+            f'Wall follower ready - wall={wall_side_str} target={self._wall_target:.2f}m'
         )
         self.get_logger().info(
             f'Waiting for {self._prescan_target} scans before moving...'
         )
 
-    # ------------------------------------------------------------------ scan --
+    def _set_wall_geometry_from_sign(self) -> None:
+        s = self._wall_sign
+        self._side_lo = self._left_side_lo if s > 0.0 else self._right_side_lo
+        self._side_hi = self._left_side_hi if s > 0.0 else self._right_side_hi
+        self._diag_lo = self._left_diag_lo if s > 0.0 else self._right_diag_lo
+        self._diag_hi = self._left_diag_hi if s > 0.0 else self._right_diag_hi
 
     def scan_callback(self, msg: LaserScan) -> None:
         off = self._angle_offset
@@ -251,7 +244,7 @@ class WallFollower(Node):
             msg, self._right_diag_lo, self._right_diag_hi, self._diag_percentile, off
         )
         self._refresh_active_wall_ranges()
-        # Rear sector: ±40° around 180° (two halves that straddle the ±π wrap)
+
         rear_l = self._sector_min(msg, math.radians(140.0), math.pi, off)
         rear_r = self._sector_min(msg, -math.pi, math.radians(-140.0), off)
         if math.isnan(rear_l) and math.isnan(rear_r):
@@ -273,7 +266,7 @@ class WallFollower(Node):
             if self._scan_count >= self._prescan_target:
                 self._prescan_done = True
                 self.get_logger().info(
-                    f'Pre-scan complete ({self._scan_count} scans) — starting calibration'
+                    f'Pre-scan complete ({self._scan_count} scans) - starting calibration'
                 )
 
     def _goal_callback(self, msg: Point) -> None:
@@ -282,13 +275,7 @@ class WallFollower(Node):
         self._goal_yaw = msg.z
 
     @staticmethod
-    def _sector_min(scan: LaserScan, ang_lo: float, ang_hi: float,
-                    offset: float = 0.0) -> float:
-        """Minimum valid range in a robot-frame angular sector.
-
-        offset rotates raw scan angles into robot frame:
-            ang_robot = ((ang_raw - offset + pi) % 2pi) - pi
-        """
+    def _sector_min(scan: LaserScan, ang_lo: float, ang_hi: float, offset: float = 0.0) -> float:
         amin = scan.angle_min
         ainc = scan.angle_increment
         two_pi = 2.0 * math.pi
@@ -305,9 +292,13 @@ class WallFollower(Node):
         return rmin if rmin != float('inf') else float('nan')
 
     @staticmethod
-    def _sector_percentile(scan: LaserScan, ang_lo: float, ang_hi: float,
-                           percentile: float, offset: float = 0.0) -> float:
-        """Stable sector distance using a low percentile instead of raw minimum."""
+    def _sector_percentile(
+        scan: LaserScan,
+        ang_lo: float,
+        ang_hi: float,
+        percentile: float,
+        offset: float = 0.0,
+    ) -> float:
         amin = scan.angle_min
         ainc = scan.angle_increment
         two_pi = 2.0 * math.pi
@@ -339,6 +330,7 @@ class WallFollower(Node):
 
     def _set_active_wall(self, wall_side: str, now: float) -> None:
         self._wall_sign = 1.0 if wall_side == 'left' else -1.0
+        self._set_wall_geometry_from_sign()
         self._refresh_active_wall_ranges()
         self._last_wall_switch_time = now
         self._prev_err = 0.0
@@ -362,10 +354,7 @@ class WallFollower(Node):
         self._set_active_wall(new_side, now)
         return True
 
-    # --------------------------------------------------------------- helpers --
-
     def _forward_speed(self, front: float) -> float:
-        """Cruise speed, ramped down as front wall approaches."""
         if math.isnan(front) or front >= self._front_slow:
             return self._cruise
         if front <= self._front_stop:
@@ -379,33 +368,28 @@ class WallFollower(Node):
 
     @staticmethod
     def _norm_angle(a: float) -> float:
-        """Normalise angle to [-pi, pi]."""
         return (a + math.pi) % (2.0 * math.pi) - math.pi
-
-    # -------------------------------------------------------------- control --
 
     def publish_command(self) -> None:
         if not self._scan_received:
             return
 
-        # phase 1 — prescan: sit still
         if not self._prescan_done:
             self.cmd_pub.publish(Twist())
             return
 
-        # phase 2 — calibration: sit still
         if not self._calibrated:
             if not math.isnan(self._side_range):
                 self._calib_samples.append(self._side_range)
                 self.get_logger().info(
-                    f'Calibrating... sample {len(self._calib_samples)}'
-                    f'/{self._calib_target}: {self._side_range:.3f}m'
+                    f'Calibrating... sample {len(self._calib_samples)}/{self._calib_target}: '
+                    f'{self._side_range:.3f}m'
                 )
             if len(self._calib_samples) >= self._calib_target:
                 self._wall_target = sum(self._calib_samples) / len(self._calib_samples)
                 self._calibrated = True
                 self.get_logger().info(
-                    f'Wall target calibrated to {self._wall_target:.3f}m — starting navigation'
+                    f'Wall target calibrated to {self._wall_target:.3f}m - starting navigation'
                 )
             else:
                 self.cmd_pub.publish(Twist())
@@ -427,20 +411,15 @@ class WallFollower(Node):
         front_blocked = not math.isnan(front) and front <= self._front_stop
         front_clear = not front_blocked
         goal_available = self._goal_dx is not None and self._goal_yaw is not None
-
         elapsed = now - (self._mode_start if self._mode_start is not None else now)
-
         rear_blocked = not math.isnan(self._rear_range) and self._rear_range <= self._front_stop
 
-        # ---- mode transitions ----
         if self._mode == 'follow':
             if front_blocked:
                 self._switch('turn', now)
             elif wall_seen and side > self._wall_target + self._corner_open:
                 self._switch('corner', now)
             elif not wall_seen:
-                # Wall gone — jump straight to explore if a frontier is ready,
-                # otherwise search (slow crawl) until one becomes available.
                 if goal_available:
                     self._switch('explore', now)
                 else:
@@ -450,21 +429,12 @@ class WallFollower(Node):
             if front_blocked:
                 self._switch('turn', now)
             elif elapsed >= self._corner_timeout:
-                # Wall didn't return — likely a junction/branch opening, not a corner.
-                # Go straight to explore if a frontier goal is ready.
                 if goal_available:
                     self._switch('explore', now)
                 else:
                     self._switch('search', now)
             else:
-                # Exit corner mode only once the side wall has returned close to the
-                # desired offset. The old logic exited as soon as any wall showed up
-                # again, which could hand control back while the robot was still
-                # hugging the inside wall of the corner.
-                side_aligned = (
-                    wall_seen
-                    and abs(side - self._wall_target) <= self._corner_exit_tol
-                )
+                side_aligned = wall_seen and abs(side - self._wall_target) <= self._corner_exit_tol
                 if side_aligned:
                     self._switch('follow', now)
 
@@ -499,13 +469,13 @@ class WallFollower(Node):
             elif front_blocked:
                 self._switch('turn', now)
             elif elapsed > self._explore_stuck_sec:
-                self.get_logger().warn('Explore stuck — entering recovery')
+                self.get_logger().warn('Explore stuck - entering recovery')
                 self._switch('recovery_backup', now)
             elif goal_available:
                 goal_dist = math.hypot(self._goal_dx, self._goal_dy)
                 if goal_dist < self._explore_goal_dist:
                     self.get_logger().info(
-                        f'Frontier goal reached ({goal_dist:.2f}m) — returning to search'
+                        f'Frontier goal reached ({goal_dist:.2f}m) - returning to search'
                     )
                     self._switch('search', now)
 
@@ -517,7 +487,6 @@ class WallFollower(Node):
             if elapsed >= self._recovery_turn_sec:
                 self._switch('settle', now)
 
-        # ---- compute output ----
         cmd = Twist()
 
         if self._mode == 'turn':
@@ -529,24 +498,13 @@ class WallFollower(Node):
             cmd.angular.z = 0.0
 
         elif self._mode == 'corner':
-            # Guided arc: use the diagonal sensor to control the turn rate.
-            # Goal: keep the diagonal reading near corner_diag_target_m so the
-            # robot sweeps around the corner at a consistent radius instead of
-            # blindly applying a fixed angular velocity.
-            #
-            # When diag is nan (nothing in diagonal yet — early in the corner):
-            #   turn at minimum rate and keep moving so the new wall enters view.
-            # When diag sees the new wall:
-            #   error = diag - target; positive = too far out, increase turn rate.
-            #   error = diag - target; negative = cutting in too tight, reduce rate.
             if not math.isnan(diag):
                 diag_err = diag - self._corner_diag_target
                 arc_turn = self._corner_turn_min + self._corner_kp * diag_err
             else:
-                # No diagonal reading yet — use minimum turn to sweep into corner
                 arc_turn = self._corner_turn_min
             arc_turn = self._clamp(arc_turn, self._corner_turn)
-            arc_turn = max(self._corner_turn_min, arc_turn)  # never below minimum
+            arc_turn = max(self._corner_turn_min, arc_turn)
             cmd.linear.x = float(self._corner_speed * self._linear_scale)
             cmd.angular.z = float(self._wall_sign * arc_turn)
 
@@ -559,18 +517,17 @@ class WallFollower(Node):
                 heading_to_goal = math.atan2(self._goal_dy, self._goal_dx)
                 heading_err = self._norm_angle(heading_to_goal - self._goal_yaw)
                 if abs(heading_err) > self._explore_angle_tol:
-                    # turn toward goal before moving forward
                     cmd.linear.x = 0.0
                     cmd.angular.z = float(
-                        self._clamp(self._explore_turn_spd * math.copysign(1.0, heading_err),
-                                    self._explore_turn_spd)
+                        self._clamp(
+                            self._explore_turn_spd * math.copysign(1.0, heading_err),
+                            self._explore_turn_spd,
+                        )
                     )
                 else:
-                    # heading good — drive forward
                     cmd.linear.x = float(self._explore_spd * self._linear_scale)
                     cmd.angular.z = float(self._clamp(0.3 * heading_err, self._ang_max))
             else:
-                # lost goal mid-explore — gentle forward
                 cmd.linear.x = float(self._search_spd * self._linear_scale)
                 cmd.angular.z = 0.0
 
@@ -587,58 +544,27 @@ class WallFollower(Node):
             follow_err_mag = 0.0
             if wall_seen:
                 raw_err = side - self._wall_target
-
-                # --- Hallway centering: both walls visible ---
-                # When the opposite wall is also detected, steer to the corridor
-                # midpoint using P-only control. This keeps the robot driving
-                # straight in a hallway without the oscillation that comes from
-                # chasing a fixed single-wall target with PID.
-                opp = self._opp_range
-                if self._hallway_center_mode and not math.isnan(opp):
-                    hallway_width = side + opp
-                    center_err = side - hallway_width / 2.0
-                    if abs(center_err) < self._center_deadband:
-                        center_err = 0.0
-                    follow_err_mag = abs(center_err)
-                    # Gentle P-only with a dedicated clamp and dead-band to avoid
-                    # left-right hunting in straight hallways.
-                    angular_z = self._clamp(
-                        self._wall_sign * self._kp * center_err,
-                        self._center_ang_max
-                    )
-                    # Keep PID state clean so there's no wind-up in the background
+                follow_err_mag = abs(raw_err)
+                clear_straight_path = (
+                    (math.isnan(front) or front >= self._straight_front_min)
+                    and abs(raw_err) <= self._straight_pid_error
+                )
+                if clear_straight_path:
+                    angular_z = 0.0
                     self._filtered_err = 0.0
-                    self._prev_raw_err = 0.0
+                    self._prev_raw_err = raw_err
                     self._integral_err = 0.0
-
                 else:
-                    follow_err_mag = abs(raw_err)
-                    # --- Single-wall PID with dead-band ---
-                    # Dead-band: suppress corrections for errors smaller than
-                    # error_deadband_m. This stops LiDAR noise (±1-2 cm) from
-                    # driving constant micro-steering that accumulates into a U-turn.
                     if abs(raw_err) < self._error_deadband:
                         eff_err = 0.0
                     else:
-                        # Shift so response starts from dead-band edge, not from zero,
-                        # preventing a step discontinuity when crossing the threshold.
                         eff_err = raw_err - math.copysign(self._error_deadband, raw_err)
 
-                    # P: proportional to dead-banded error.
-                    # Removed the asymmetric lag filter — that filter created a slow
-                    # ramp that the D term fought continuously, causing oscillation.
                     self._filtered_err = eff_err
-
-                    # I: integrate dead-banded error; anti-windup clamp applied.
                     self._integral_err = self._clamp(
                         self._integral_err + eff_err * dt,
-                        self._integral_max
+                        self._integral_max,
                     )
-
-                    # D: differentiate raw (un-dead-banded) error so the derivative
-                    # still reacts to real wall geometry changes, but clamp the spike
-                    # tightly (2.0 m/s²) so a single noisy scan can't flip the robot.
-                    # Previous clamp was 10.0 — that let noise dominate.
                     d_term = self._clamp((raw_err - self._prev_raw_err) / dt, 2.0)
 
                     raw = self._wall_sign * (
@@ -651,12 +577,14 @@ class WallFollower(Node):
                     self._prev_raw_err = raw_err
             else:
                 angular_z = 0.0
+
             if self._recenter_slow_error > 1e-3:
                 recenter_frac = min(1.0, follow_err_mag / self._recenter_slow_error)
                 recenter_scale = 1.0 - (
                     (1.0 - self._recenter_speed_scale_min) * recenter_frac
                 )
                 speed *= recenter_scale
+
             cmd.linear.x = float(speed * self._linear_scale)
             cmd.angular.z = float(angular_z)
 
@@ -664,7 +592,7 @@ class WallFollower(Node):
         self.cmd_pub.publish(cmd)
 
     def _switch(self, mode: str, now: float) -> None:
-        self.get_logger().info(f'Mode: {self._mode} → {mode}')
+        self.get_logger().info(f'Mode: {self._mode} -> {mode}')
         self._mode = mode
         self._mode_start = now
         self._prev_err = 0.0
@@ -672,22 +600,27 @@ class WallFollower(Node):
         self._prev_raw_err = 0.0
         self._integral_err = 0.0
 
-    # ---------------------------------------------------------- diagnostics --
-
     def _log_diag(self, now: float, front: float, side: float, diag: float) -> None:
         if (now - self._last_diag_time) < self._diag_interval:
             return
         self._last_diag_time = now
         fmt = lambda v: f'{v:.2f}' if not math.isnan(v) else 'nan'
-        goal_str = (f'goal=({self._goal_dx:.2f},{self._goal_dy:.2f})'
-                    if self._goal_dx is not None else 'goal=none')
-        opp = self._opp_range
-        centering = (self._hallway_center_mode and not math.isnan(opp))
-        ctrl_str = f'center(w={side + opp:.2f})' if centering else 'pid'
+        goal_str = (
+            f'goal=({self._goal_dx:.2f},{self._goal_dy:.2f})'
+            if self._goal_dx is not None
+            else 'goal=none'
+        )
+        clear_straight_path = (
+            not math.isnan(side)
+            and (math.isnan(front) or front >= self._straight_front_min)
+            and abs(side - self._wall_target) <= self._straight_pid_error
+        )
+        ctrl_str = 'straight' if clear_straight_path else 'pid'
         wall_str = 'left' if self._wall_sign > 0.0 else 'right'
         self.get_logger().info(
-            f'DIAG | mode={self._mode:16s} wall={wall_str:5s} ctrl={ctrl_str:16s} '
-            f'front={fmt(front)} side={fmt(side)} opp={fmt(opp)} diag={fmt(diag)} {goal_str}'
+            f'DIAG | mode={self._mode:16s} wall={wall_str:5s} ctrl={ctrl_str:8s} '
+            f'front={fmt(front)} side={fmt(side)} opp={fmt(self._opp_range)} '
+            f'diag={fmt(diag)} {goal_str}'
         )
 
 
