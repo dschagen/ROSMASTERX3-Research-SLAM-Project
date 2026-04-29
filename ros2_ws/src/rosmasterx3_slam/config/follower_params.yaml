@@ -15,19 +15,8 @@ hallway_follower:
     # --- side-wall PID ---
     # error = measured_side - wall_target  (positive = too far, negative = too close)
     kp_side: 0.20
-    ki_side: 0.004                # small integral — corrects persistent steady-state drift
-    kd_side: 0.25
+    kd_side: 0.40
     angular_max: 0.20             # rad/s cap on all angular output
-    integral_max: 0.05            # anti-windup: caps integral contribution (rad/s)
-
-    # Dead-band: errors smaller than this (metres) are treated as zero.
-    # Stops LiDAR noise from driving constant micro-corrections.
-    error_deadband_m: 0.05
-
-    # Straight driving: if the front is clear and wall error is small, hold a
-    # straight heading instead of constantly nudging with PID.
-    straight_front_min_m: 0.90
-    straight_pid_error_m: 0.10
 
     # --- front obstacle ---
     front_stop_m: 0.25            # stop + enter turn mode below this
@@ -36,14 +25,8 @@ hallway_follower:
 
     # --- corner mode (wall opens up at a corner) ---
     corner_open_m: 0.25           # wall must open this far past target to trigger
-    corner_turn: 0.18             # max angular.z (rad/s) during guided arc
-    corner_turn_min: 0.06         # min angular.z — always turning at least this fast
-    corner_speed: 0.025           # forward speed during arc (slow = tighter radius)
-    corner_diag_target_m: 0.50    # target diagonal reading during arc (m)
-                                  # increase = wider arc, decrease = tighter arc
-    corner_kp: 0.30               # how aggressively to adjust turn rate from diag error
-    corner_timeout_sec: 5.0       # give up if wall never returns after this long
-    corner_exit_tol_m: 0.08       # only exit corner mode once side distance is near target
+    corner_turn: 0.15             # angular.z (rad/s) — pure rotation in place on omni wheels
+    corner_timeout_sec: 12.0      # 90° at 0.15 rad/s takes ~10.5s — give enough time
 
     # --- turn mode (front obstacle) ---
     turn_angular: 0.06            # angular.z (rad/s) while turning away from wall
@@ -76,15 +59,6 @@ hallway_follower:
     side_outer_deg: 120.0
     diag_inner_deg: 30.0
     diag_outer_deg: 65.0
-    side_percentile: 25.0         # stable wall estimate; lower = more conservative
-    diag_percentile: 30.0
-    opp_percentile: 25.0
-
-    # --- follow recovery ---
-    # Slow down when wall error is large so the robot can settle after corners
-    # instead of carrying too much forward momentum into an overshoot.
-    recenter_slow_error_m: 0.10
-    recenter_speed_scale_min: 0.40
 
     # --- timing ---
     control_period_sec: 0.05
@@ -92,4 +66,3 @@ hallway_follower:
 
     # --- startup ---
     prescan_count: 20             # scans to collect before moving
-    wall_switch_cooldown_sec: 0.8 # prevents rapid left/right flipping when both walls flicker
