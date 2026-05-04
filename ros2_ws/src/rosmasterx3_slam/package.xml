@@ -3,7 +3,7 @@
 <package format="3">
   <name>rosmasterx3_slam</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
+  <description>ROSMASTER X3 SLAM, wall following, and frontier exploration research package</description>
   <maintainer email="1461190907@qq.com">root</maintainer>
   <license>TODO: License declaration</license>
 

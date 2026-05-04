@@ -1,18 +1,16 @@
-# Config Files
+# Configuration
 
-This folder stores ROS2 parameter files used by the autonomy stack.
+Runtime ROS 2 parameter files are stored inside the active package:
 
-## Files
+```text
+ros2_ws/src/rosmasterx3_slam/config/
+```
 
-- `slam_params.yaml`  
-  Parameters for `slam_toolbox`
+Current files:
 
-- `hallway_detector.yaml`  
-  Parameters for camera-based hallway detection
+- `slam_params.yaml`: SLAM Toolbox mapping parameters.
+- `ekf_params.yaml`: `robot_localization` EKF parameters for `/odom` and `/imu/data`.
+- `follower_params.yaml`: wall following, obstacle handling, exploration, and recovery behavior.
+- `explorer_params.yaml`: frontier detection and goal-selection behavior.
 
-- `hallway_follower.yaml`  
-  Parameters for hallway following control behavior
-
-## Purpose
-
-These files separate tuning values from code so the robot can be adjusted more easily during testing.
+This top-level `config/` folder is kept as a project note location. Add runtime YAML files to the ROS package config directory so `colcon` installs them with the package.

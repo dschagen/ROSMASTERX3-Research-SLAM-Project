@@ -1,46 +1,48 @@
 # Lessons Learned
 
-## ROS2 Integration
+## ROS 2 Integration
 
-- QoS settings are critical for sensor data
-- Camera topics often require sensor-data QoS
-- Nodes may appear active without receiving data
-
----
+- QoS settings are critical for sensor data.
+- Camera topics often require sensor-data QoS.
+- Nodes may appear active even when their subscriptions are not receiving data.
+- Launch composition matters; keep hardware bringup separate from mapping and autonomy layers.
 
 ## Debugging
 
-- Always verify topic connections with:
-  ros2 topic info -v
+Always verify topic connections with:
 
-- Use:
-  ros2 topic echo
-  ros2 topic hz
+```bash
+ros2 topic info -v /topic_name
+```
 
-to validate data flow
+Use these commands to validate live data flow:
 
----
+```bash
+ros2 topic echo /topic_name
+ros2 topic hz /topic_name
+```
+
+For transforms, use:
+
+```bash
+ros2 run tf2_ros tf2_echo odom base_link
+ros2 run tf2_ros tf2_echo base_link laser
+```
 
 ## System Design
 
-- Separating perception and control simplifies debugging
-- Modular nodes allow easier scaling
-- Testing each component independently is essential
-
----
+- Separating mapping, exploration, and motion control simplifies debugging.
+- Only one node should own `/cmd_vel_safe` during autonomy.
+- Frontier exploration should publish goals, not direct velocity commands.
+- YAML parameter files make field tuning faster and safer.
 
 ## Robotics Insights
 
-- Reactive systems are simple but limited
-- Stability requires smoothing and thresholds
-- Real-world sensors introduce noise and variability
-
----
+- Reactive systems are simple and useful, but limited in cluttered spaces.
+- Stability requires smoothing, thresholds, and slow speeds.
+- Floor surface, LiDAR mounting, and sensor noise all affect behavior.
+- Good maps require careful motion, not just correct code.
 
 ## Key Takeaway
 
-A working system is not just code—it requires:
-- correct architecture
-- correct data flow
-- careful parameter tuning
-- iterative testing
+A working robot system requires correct architecture, correct data flow, careful parameter tuning, and repeated real-world testing.

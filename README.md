@@ -1,144 +1,184 @@
 # ROSMASTER X3 Research SLAM Project
 
-This repository contains a full robotics pipeline for the Yahboom ROSMASTER X3 platform using ROS 2 Foxy. The system performs indoor mapping and autonomous navigation using LiDAR-based SLAM and camera-based hallway following.
+This project contains the current ROS 2 Foxy research stack for the Yahboom ROSMASTER X3 platform. It supports LiDAR-based SLAM mapping, filtered odometry, wall/hallway following, and frontier-driven exploration.
 
----
+The actively maintained ROS package is:
 
-## Project Overview
-
-This project builds a modular autonomy stack consisting of:
-
-- LiDAR-based SLAM mapping  
-- Camera-based perception using OpenCV  
-- Reactive hallway navigation  
-- ROS2 modular node architecture  
-
-The system runs on a Jetson platform inside Docker using ROS 2 Foxy.
-
----
-
-## System Architecture
-LiDAR → SLAM Toolbox → /map
-Camera → Hallway Detector → /hallway_direction
-Hallway Follower → /cmd_vel_safe → Driver Node → Robot Motors
-
----
-
-## Current Features
-
-### SLAM Mapping
-- Uses `slam_toolbox`
-- Publishes:
-  - `/map`
-  - `/map_metadata`
-- Supports real-time indoor mapping
-
----
-
-### Camera-Based Hallway Detection
-- Input: `/camera/color/image_raw`
-- Processing:
-  - Canny edge detection  
-  - Region-based scoring (left / center / right)  
-  - Lower-half weighting for stability  
-- Output:
-  - `/hallway_direction` (`LEFT`, `CENTER`, `RIGHT`, `NONE`)
-
----
-
-### Autonomous Hallway Following
-- Node: `hallway_follower`
-- Subscribes to `/hallway_direction`
-- Publishes `/cmd_vel_safe`
-
-Behavior:
-
-| Direction | Action |
-|----------|--------|
-| CENTER   | Move forward |
-| LEFT     | Steer left |
-| RIGHT    | Steer right |
-| NONE     | Stop |
-
----
-
-### Modular ROS2 Design
-- Separation of:
-  - Perception (`hallway_detector`)
-  - Control (`hallway_follower`)
-  - Mapping (`slam_toolbox`)
-- Designed for future Nav2 integration
-
----
-
-## Setup
-
-### Requirements
-- ROS 2 Foxy  
-- Docker (Jetson environment)  
-- Yahboom ROSMASTER X3  
-- Astra / Orbbec camera  
-- LiDAR (A1)  
-
----
-
-## How to Run
-
-### 1. Start Robot Bringup + SLAM
-`ros2 launch rosmasterx3_slam mapping_bringup.launch.py`
-### 2. Start Camera
-`ros2 launch astra_camera astro_pro_plus.launch.xml`
-### 3. Run Hallway Detector
-`export QT_X11_NO_MITSHM=1`
-`export DISPLAY=:0`
-`ros2 run rosmasterx3_slam hallway_detector`
-### 4. Run Hallway Follower
-`ros2 run rosmasterx3_slam hallway_follower`
-### 5. Emergencey Stop
-`ros2 topic pub -r 50 /cmd_vel_safe geometry_msgs/msg/Twist "{linear: {x: 0.0, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.0}}"`
-
-## Debugging
-
-### Check topics:
-`ros2 topic list`
-### Check Camera:
-`ros2 topic hz /camera/color/image_raw`
-### Check hallway output:
-`ros2 topic echo /hallway_direction`
-### Check velocity:
-`ros2 topic echo /cmd_vel_safe
-
-## Tuning
-
-### Inside hallway_follower.py:
-`linear.x = 0.02`
-`angular.z = 0.08`
-### Adjust:
-`- Lower angular.z → smoother motion`
-`- Higher angular.z → faster correction`
-`- Increase smoothing window → less jitter`
-
-## Current Limitations
-`- No obstacle avoidance`
-`- No global path planning`
-`- Lighting sensitivity`
-`- No dead-end detection`
-
-## Repository Structure
-
+```text
 ros2_ws/src/rosmasterx3_slam/
-├── config/
-├── launch/
-├── rosmasterx3_slam/
-│   └── nodes/
-│       ├── hallway_detector.py
-│       ├── hallway_follower.py
-│       └── scan_monitor.py
-├── package.xml
-├── setup.py
+```
+
+## Current Stack
+
+- Robot hardware bringup through `yahboomcar_bringup`
+- RPLidar startup through `sllidar_ros2`
+- Static `base_link` to `laser` transform
+- `robot_localization` EKF for `/odom` plus `/imu/data`
+- `slam_toolbox` asynchronous mapping from `/scan`
+- LiDAR wall follower publishing the final `/cmd_vel_safe`
+- Frontier explorer publishing candidate goals on `/exploration_goal`
+- Optional camera hallway detector for vision experiments
+
+## Architecture
+
+```text
+/scan
+  -> scan_monitor
+  -> slam_toolbox
+  -> /map
+
+/odom + /imu/data
+  -> ekf_filter_node
+  -> odom -> base_link TF
+
+/map + /odom
+  -> frontier_explorer
+  -> /exploration_goal
+
+/scan + /exploration_goal
+  -> hallway_follower
+  -> /cmd_vel_safe
+  -> Yahboom driver_node
+  -> robot motors
+```
+
+The `hallway_follower` is the only project node that writes to `/cmd_vel_safe` during autonomy. The frontier explorer only selects goals and never commands the robot directly.
+
+## Repository Layout
+
+```text
+ROSMASTERX3-Research-SLAM-Project/
+  config/                 Project-level notes for configuration files
+  docs/                   Architecture and workflow documentation
+  launch/                 Project-level launch notes
+  maps/                   Saved occupancy grids and run images
+  notes/                  Calibration logs, lessons learned, and summaries
+  ros2_ws/src/
+    rosmasterx3_slam/     Active ROS 2 package
+      config/             Runtime YAML parameters
+      launch/             ROS 2 launch files
+      rosmasterx3_slam/
+        nodes/            Python ROS 2 nodes
+      package.xml
+      setup.py
+  scripts/                Standalone test/helper scripts
+  vendor/                 Optional third-party helper code
+```
+
+## ROS Package Entry Points
+
+Installed console scripts from `rosmasterx3_slam`:
+
+- `scan_monitor`
+- `hallway_detector`
+- `hallway_follower`
+- `frontier_explorer`
+
+## Launch Files
+
+Run these from a sourced ROS 2 Foxy environment after building the workspace.
+
+```bash
+cd ROSMASTERX3-Research-SLAM-Project/ros2_ws
+colcon build --symlink-install
+source install/setup.bash
+```
+
+Hardware, LiDAR, static TF, and EKF:
+
+```bash
+ros2 launch rosmasterx3_slam bringup.launch.py
+```
+
+SLAM only, assuming hardware is already running:
+
+```bash
+ros2 launch rosmasterx3_slam mapping.launch.py
+```
+
+Hardware plus SLAM:
+
+```bash
+ros2 launch rosmasterx3_slam mapping_bringup.launch.py
+```
+
+Hardware plus wall following:
+
+```bash
+ros2 launch rosmasterx3_slam follower.launch.py
+```
+
+Hardware, SLAM, and wall following:
+
+```bash
+ros2 launch rosmasterx3_slam slam_follower.launch.py
+```
+
+Full autonomy with hardware, SLAM, wall following, and frontier exploration:
+
+```bash
+ros2 launch rosmasterx3_slam autonomy.launch.py
+```
+
+## Emergency Stop
+
+Publish zero velocity to the safe command topic:
+
+```bash
+ros2 topic pub -r 50 /cmd_vel_safe geometry_msgs/msg/Twist "{linear: {x: 0.0, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.0}}"
+```
+
+## Useful Checks
+
+```bash
+ros2 topic list
+ros2 topic hz /scan
+ros2 topic echo /cmd_vel_safe
+ros2 topic echo /exploration_goal
+ros2 topic echo /map_metadata
+ros2 run tf2_ros tf2_echo odom base_link
+```
+
+## Parameter Files
+
+Runtime YAML files live in:
+
+```text
+ros2_ws/src/rosmasterx3_slam/config/
+```
+
+- `slam_params.yaml`: `slam_toolbox` mapping settings
+- `ekf_params.yaml`: odometry and IMU fusion settings
+- `follower_params.yaml`: wall following, obstacle handling, exploration, and recovery behavior
+- `explorer_params.yaml`: frontier detection, goal selection, and visited-frontier filtering
+
+## Maps
+
+Saved maps and mapping screenshots live in `maps/`. Current map artifacts include:
+
+- `first_hallway_map`
+- `hallway_run_01`
+- `hallway_run_02`
+- `slam_final.png`
+- April 2026 hallway run images and screenshots
+
+## Optional Vision Node
+
+`hallway_detector` subscribes to `/camera/color/image_raw` and publishes:
+
+- `/hallway_direction`
+- `/hallway_steering_bias`
+
+The current autonomy launch path is LiDAR-first and does not depend on the camera detector.
+
+## Documentation
+
+- `docs/system_architecture.md`: current node/topic architecture
+- `docs/mapping_workflow.md`: mapping procedure and map saving workflow
+- `notes/`: calibration, tuning, hallway navigation, issues, lessons learned, and project summary material
 
 ## Authors
-Daniel Schagen
-Mark Halim
-University of South Florida
-Computer Science & Engineering
+
+Daniel Schagen  
+Mark Halim  
+University of South Florida, Computer Science and Engineering

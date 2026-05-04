@@ -1,152 +1,124 @@
-# ROSMASTERX3 SLAM Mapping Workflow
+# ROSMASTER X3 SLAM Mapping Workflow
 
 ## Overview
 
-This document describes the workflow used to generate occupancy grid maps using a ROS2-based SLAM pipeline on the ROSMASTER X3 platform.
+This document describes the current workflow for generating occupancy-grid maps with the ROSMASTER X3 ROS 2 Foxy stack.
 
-The system uses:
-- LiDAR (RPLidar A1)
-- Wheel odometry
-- IMU data
+The mapping path uses:
+
+- RPLidar A1 scan data on `/scan`
+- Yahboom odometry on `/odom`
+- IMU data on `/imu/data`
+- `robot_localization` EKF for filtered odometry
 - `slam_toolbox` for mapping
 - RViz for visualization
 
----
-
-## System Architecture
-
-```
-/scan (LiDAR)
-        ↓
-/odom + /imu (robot state)
-        ↓
-slam_toolbox
-        ↓
-/map + /tf
-        ↓
-RViz (visualization)
-```
-
----
-
-## Prerequisites
-
-Ensure the following are running:
-
-- ROS2 Foxy environment
-- Yahboom bringup stack
-- LiDAR node
-- Static TF between `base_link` and `laser`
-
----
-
-## Launch Sequence
-
-### 1. Start robot bringup
+## Build and Source
 
 ```bash
-ros2 launch yahboomcar_bringup yahboomcar_bringup_X3_launch.py
+cd ROSMASTERX3-Research-SLAM-Project/ros2_ws
+colcon build --symlink-install
+source install/setup.bash
 ```
 
----
+## Start Mapping
 
-### 2. Start LiDAR
+The preferred mapping launch starts hardware, LiDAR, static TF, EKF, scan diagnostics, and SLAM Toolbox:
 
 ```bash
-ros2 launch sllidar_ros2 sllidar_launch.py
+ros2 launch rosmasterx3_slam mapping_bringup.launch.py
 ```
 
----
-
-### 3. Publish static transform (LiDAR → base)
+Equivalent manual sequence:
 
 ```bash
-ros2 run tf2_ros static_transform_publisher 0.10 0.0 0.12 0 0 0 base_link laser
-```
-
----
-
-### 4. Start SLAM (custom package)
-
-```bash
+ros2 launch rosmasterx3_slam bringup.launch.py
 ros2 launch rosmasterx3_slam mapping.launch.py
 ```
 
----
+## What Starts
 
-### 5. Launch RViz
+```text
+bringup.launch.py
+  -> yahboomcar_bringup
+  -> sllidar_ros2
+  -> base_link to laser static TF
+  -> robot_localization ekf_node
+
+mapping.launch.py
+  -> scan_monitor
+  -> slam_toolbox async_slam_toolbox_node
+```
+
+## RViz
 
 ```bash
 export DISPLAY=:0
 ros2 run rviz2 rviz2
 ```
 
----
+Recommended displays:
 
-## RViz Setup
+- Map: `/map`
+- LaserScan: `/scan`
+- TF
+- RobotModel
 
-Add the following displays:
+Set the fixed frame to:
 
-- **Map** → Topic: `/map`
-- **LaserScan** → Topic: `/scan`
-- **TF**
-- **RobotModel**
-
-Set Fixed Frame:
-```
+```text
 map
 ```
 
----
+## Mapping Strategy
 
-## Robot Motion Control
+For cleaner maps:
 
-### Forward motion (calibrated)
+- Move slowly.
+- Use short forward bursts.
+- Stop fully between movements when the map begins to smear.
+- Avoid fast turns.
+- Prefer smooth surfaces over tile/grout when possible.
+- Watch `/scan`, TF, and `/map` in RViz while tuning.
+
+The current follower default cruise speed is `0.03 m/s`, configured in `config/follower_params.yaml`.
+
+## Manual Motion Commands
+
+Forward test command:
 
 ```bash
 ros2 topic pub -r 10 /cmd_vel_safe geometry_msgs/msg/Twist "{linear: {x: 0.02, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.00099}}"
 ```
 
-### Stop robot (strong stop)
+Strong stop:
 
 ```bash
 ros2 topic pub -r 20 /cmd_vel_safe geometry_msgs/msg/Twist "{linear: {x: 0.0, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.0}}"
 ```
 
----
-
-## Mapping Strategy
-
-To achieve high-quality maps:
-
-- Move at **0.02 m/s**
-- Use **short forward bursts**
-- Fully stop between movements
-- Avoid rapid turns
-- Prefer smooth surfaces (wood > tile/grout)
-
----
-
-## SLAM Parameters (Key Settings)
+## Key SLAM Parameters
 
 Located in:
 
-```
+```text
 ros2_ws/src/rosmasterx3_slam/config/slam_params.yaml
 ```
 
-Key parameters:
+Current important settings:
 
 ```yaml
-minimum_time_interval: 0.7
-minimum_travel_distance: 0.05
-minimum_travel_heading: 0.05
+mode: mapping
 resolution: 0.05
+max_laser_range: 6.0
+minimum_time_interval: 0.7
+minimum_travel_distance: 0.15
+minimum_travel_heading: 0.20
+map_update_interval: 3.0
+do_loop_closing: true
 ```
 
----
-
-## Saving a Map
+## Save a Map
 
 While SLAM is running:
 
@@ -154,49 +126,33 @@ While SLAM is running:
 ros2 run nav2_map_server map_saver_cli -f /root/maps/map_name
 ```
 
-If a timeout occurs:
-- Slightly move the robot
-- Immediately retry saving
+If saving times out, move the robot slightly, stop it, and retry.
 
----
-
-## Transferring Map to Repository
+## Transfer a Map Into the Repo
 
 ```bash
 cp /root/maps/map_name.* ~/Desktop/ROSMASTERX3-Research-SLAM-Project/maps/
 ```
 
-Then commit:
+Current saved maps in this repo include:
+
+- `first_hallway_map`
+- `hallway_run_01`
+- `hallway_run_02`
+
+## Useful Diagnostics
 
 ```bash
-git add maps/map_name.pgm maps/map_name.yaml
-git commit -m "Add SLAM map"
-git push
+ros2 topic hz /scan
+ros2 topic echo /map_metadata
+ros2 topic echo /odom
+ros2 topic echo /imu/data
+ros2 run tf2_ros tf2_echo odom base_link
+ros2 run tf2_ros tf2_echo base_link laser
 ```
-
----
-
-## Observations
-
-- Floor surface significantly affects mapping accuracy
-- Small angular correction (`0.00099`) was required for straight motion
-- LiDAR operates at ~7 Hz, limiting update frequency
-- Motion discipline is critical for map quality
-
----
 
 ## Current Status
 
-- SLAM pipeline operational
-- Maps successfully generated and saved
-- RViz visualization working
-- Motion calibration complete
-
----
-
-## Next Steps
-
-- Improve EKF tuning
-- Add localization mode (map reuse)
-- Explore loop closure optimization
-- Automate motion control
+- Hardware bringup, LiDAR, EKF, and SLAM are represented in launch files.
+- Maps have been generated and saved under `maps/`.
+- The current autonomy path can combine mapping, wall following, and frontier exploration through `autonomy.launch.py`.
